@@ -329,6 +329,29 @@ uint16_t mode_dynamic_smooth(void) {
  }
 static const char _data_FX_MODE_DYNAMIC_SMOOTH[] PROGMEM = "Dynamic Smooth@!,!;;!";
 
+// Blit to random places in the segment, in a lazy fashion
+uint16_t mode_lazyblit(void) {
+  uint32_t old = SEGENV.step;
+  SEGENV.step += SEGMENT.speed + 1;
+
+  if ((old >> 8) != (SEGENV.step >> 8))
+  {
+    int i = random16() % SEGLEN;
+    int chance = random8();
+    if (chance <= SEGMENT.intensity)
+    {
+      SEGMENT.setPixelColor(i, SEGMENT.color_from_palette(random8(), false, false, 0));
+    }
+    else
+    {
+      SEGMENT.setPixelColor(i, SEGCOLOR(1));
+    }
+  }
+
+  return FRAMETIME;
+}
+static const char _data_FX_MODE_LAZYBLIT[] PROGMEM = "LazyBlit@!,!;,!;!;1";
+
 
 /*
  * Does the "standby-breathing" of well known i-Devices.
@@ -7813,6 +7836,7 @@ void WS2812FX::setupEffectData() {
   addEffect(FX_MODE_BLENDS, &mode_blends, _data_FX_MODE_BLENDS);
   addEffect(FX_MODE_TV_SIMULATOR, &mode_tv_simulator, _data_FX_MODE_TV_SIMULATOR);
   addEffect(FX_MODE_DYNAMIC_SMOOTH, &mode_dynamic_smooth, _data_FX_MODE_DYNAMIC_SMOOTH);
+  addEffect(FX_MODE_LAZYBLIT, &mode_lazyblit, _data_FX_MODE_LAZYBLIT);
 
   // --- 1D audio effects ---
   addEffect(FX_MODE_PIXELS, &mode_pixels, _data_FX_MODE_PIXELS);
