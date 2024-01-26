@@ -27,6 +27,7 @@
 #define ENABLE_MCP3201 (1)
 #define POWER_LED_PIN (6)
 #define POWER_BUTTON_PIN (7)
+#define NUM_TEMPS (5)
 class KettleUsermod : public Usermod {
 
   private:
@@ -42,6 +43,10 @@ class KettleUsermod : public Usermod {
     static const char _enabled[];
     static const char _powerled[];
     static const char _voltage[];
+    static const char _kettlepresent[];
+    static const char _temperature[];
+   static const uint16_t voltages[];
+   static const uint16_t temperatures[];
 
 #if 0
     // set your config variables to their boot default value (this can also be done in readFromConfig() or a constructor if you prefer)
@@ -116,13 +121,37 @@ class KettleUsermod : public Usermod {
       return a / AVERAGE_READINGS;
     }
 
-    /*
-     * addToJsonInfo() can be used to add custom entries to the /json/info part of the JSON API.
-     * Creating an "u" object allows you to add custom key/value pairs to the Info section of the WLED web UI.
-     * Below it is shown how this could be used for e.g. a light sensor
-     */
+    uint16_t voltageToTemperature(uint16_t voltage)
+    {
+      if (voltage <= voltages[0])
+      {
+        return temperatures[0];
+      }
+      if (voltage >= voltages[NUM_TEMPS - 1])
+      {
+        return temperatures[NUM_TEMPS - 1];
+      }
+
+      // lerp code
+      // progress = vdiffcurrent / vdiffrange
+      // output = tlow + (progress * tdiffrange)
+      // output = tlow + ((vdiffcurrent * tdiffrange) / vdiffrange)
+      int i = 0;
+      for (i = 0; i < NUM_TEMPS - 2; i++)
+      {
+        if (voltage < voltages[i + 1]) break;
+      }
+      uint32_t num = (voltage - voltages[i]);
+      num *= temperatures[i] - temperatures[i+1];
+      num /= voltages[i+1] - voltages[i];
+      num = temperatures[i] - num;
+
+      return (uint16_t) num;
+    }
+
     void addToJsonInfo(JsonObject& root)
     {
+      uint16_t voltage = getADCReading();
       JsonObject usermod = root[FPSTR(_name)];
       if (usermod.isNull())
       {
@@ -130,44 +159,16 @@ class KettleUsermod : public Usermod {
       }
       usermod[FPSTR(_powerled)] = digitalRead(POWER_LED_PIN);
 #if ENABLE_MCP3201
-      usermod[FPSTR(_voltage)] = getADCReading();
+      usermod[FPSTR(_voltage)] = voltage;
+      usermod[FPSTR(_kettlepresent)] = voltage < 4070;
+      usermod[FPSTR(_temperature)] = voltageToTemperature(voltage);
 #endif //ENABLE_MCP3201
     }
 
-    // in such case add the following to another usermod:
-    //  in private vars:
-    //   #ifdef USERMOD_EXAMPLE
-    //   MyExampleUsermod* UM;
-    //   #endif
-    //  in setup()
-    //   #ifdef USERMOD_EXAMPLE
-    //   UM = (MyExampleUsermod*) usermods.lookup(USERMOD_ID_EXAMPLE);
-    //   #endif
-    //  somewhere in loop() or other member method
-    //   #ifdef USERMOD_EXAMPLE
-    //   if (UM != nullptr) isExampleEnabled = UM->isEnabled();
-    //   if (!isExampleEnabled) UM->enable(true);
-    //   #endif
-
-
-    // methods called by WLED (can be inlined as they are called only once but if you call them explicitly define them out of class)
-
-    /*
-     * setup() is called once at boot. WiFi is not yet connected at this point.
-     * readFromConfig() is called prior to setup()
-     * You can use it to initialize variables, sensors or similar.
-     */
     void setup() {
       // do your set-up here
       DEBUG_PRINTF("Why hello there\n");
 
-      //pinMode(1, INPUT);
-#if ENABLE_MCP3202
-      spiPort.begin(36, 37, 35, 34);
-      spiPort.setHwCs(1);
-      pinMode(9, INPUT | ANALOG);
-      pinMode(8, INPUT | ANALOG);
-#endif //ENABLE_MCP3202
 #if ENABLE_MCP3201
       spiPort.begin(36, 37, 35, 34);
       spiPort.setHwCs(1);
@@ -505,3 +506,7 @@ const char KettleUsermod::_name[]           PROGMEM = "Kettle";
 const char KettleUsermod::_enabled[]        PROGMEM = "enabled";
 const char KettleUsermod::_powerled[]        PROGMEM = "powerled";
 const char KettleUsermod::_voltage[]        PROGMEM = "voltage";
+const char KettleUsermod::_kettlepresent[]        PROGMEM = "kettlepresent";
+const char KettleUsermod::_temperature[]        PROGMEM = "temperature";
+const uint16_t KettleUsermod::voltages[NUM_TEMPS] = {1694, 2513, 2701, 3460, 3849};
+const uint16_t KettleUsermod::temperatures[NUM_TEMPS] = {2080, 1610, 1540, 1000, 590};
