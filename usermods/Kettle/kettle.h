@@ -27,7 +27,7 @@
 #define ENABLE_MCP3201 (1)
 #define POWER_LED_PIN (6)
 #define POWER_BUTTON_PIN (7)
-#define NUM_TEMPS (5)
+#define NUM_TEMPS (16)
 #define VOLTAGE_AVERAGES (32)
 class KettleUsermod : public Usermod {
 
@@ -48,8 +48,8 @@ class KettleUsermod : public Usermod {
     static const char _voltage[];
     static const char _kettlepresent[];
     static const char _temperature[];
-   static const uint16_t voltages[];
-   static const uint16_t temperatures[];
+    static const uint16_t voltages[];
+    static const uint16_t temperatures[];
 
 #if 0
     // set your config variables to their boot default value (this can also be done in readFromConfig() or a constructor if you prefer)
@@ -133,9 +133,10 @@ class KettleUsermod : public Usermod {
       }
 
       // lerp code
-      // progress = vdiffcurrent / vdiffrange
-      // output = tlow + (progress * tdiffrange)
-      // output = tlow + ((vdiffcurrent * tdiffrange) / vdiffrange)
+      // progress ranges from 0-1 from low voltage to high voltage, and high temp to low temp
+      // progress = vdiff / vdiffrange
+      // output = tHigh - (progress * tdiffrange)
+      // output = tHigh - ((vdiff * tdiffrange) / vdiffrange)
       int i = 0;
       for (i = 0; i < NUM_TEMPS - 2; i++)
       {
@@ -515,5 +516,5 @@ const char KettleUsermod::_powerled[]        PROGMEM = "powerled";
 const char KettleUsermod::_voltage[]        PROGMEM = "voltage";
 const char KettleUsermod::_kettlepresent[]        PROGMEM = "kettlepresent";
 const char KettleUsermod::_temperature[]        PROGMEM = "temperature";
-const uint16_t KettleUsermod::voltages[NUM_TEMPS] = {1694, 2513, 2701, 3460, 3849};
-const uint16_t KettleUsermod::temperatures[NUM_TEMPS] = {2080, 1610, 1540, 1000, 590};
+const uint16_t KettleUsermod::voltages[NUM_TEMPS] =     {1663, 1985, 2185, 2334, 2539, 2701, 2800, 3106, 3211, 3331, 3459,3728, 3833, 3895, 3922, 3968};
+const uint16_t KettleUsermod::temperatures[NUM_TEMPS] = {2080, 1920, 1810, 1740, 1630, 1540, 1490, 1290, 1240, 1130, 1040, 770,  600,  520,  460,  320};
