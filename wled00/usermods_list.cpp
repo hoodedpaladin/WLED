@@ -201,6 +201,8 @@
 #include "../usermods/LDR_Dusk_Dawn_v2/usermod_LDR_Dusk_Dawn_v2.h"
 #endif
 
+#include "../usermods/Kettle/kettle.h"
+
 void registerUsermods()
 {
 /*
@@ -209,6 +211,7 @@ void registerUsermods()
    * \/ \/ \/
    */
   //usermods.add(new MyExampleUsermod());
+  usermods.add(new KettleUsermod());
   #ifdef USERMOD_BATTERY
   usermods.add(new UsermodBattery());
   #endif
