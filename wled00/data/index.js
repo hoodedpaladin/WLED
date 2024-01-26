@@ -659,6 +659,7 @@ function populateInfo(i)
 	heap = heap.toFixed(1);
 	var pwr = i.leds.pwr;
 	var pwru = "Not calculated";
+	var temperature = i.Kettle.temperature / 10;
 	if (pwr > 1000) {pwr /= 1000; pwr = pwr.toFixed((pwr > 10) ? 0 : 1); pwru = pwr + " A";}
 	else if (pwr > 0) {pwr = 50 * Math.round(pwr/50); pwru = pwr + " mA";}
 	var urows="";
@@ -690,6 +691,10 @@ ${inforow("Average FPS",i.leds.fps)}
 ${inforow("MAC address",i.mac)}
 ${inforow("Filesystem",i.fs.u + "/" + i.fs.t + " kB (" +Math.round(i.fs.u*100/i.fs.t) + "%)")}
 ${inforow("Environment",i.arch + " " + i.core + " (" + i.lwip + ")")}
+${inforow("Temperature", temperature)}
+${inforow("Voltage", i.Kettle.voltage)}
+${inforow("Boiling", i.Kettle.powerled)}
+${inforow("Kettle Present", i.Kettle.kettlepresent)}
 </table>`;
 	gId('kv').innerHTML = cn;
 	//  update all sliders in Info
