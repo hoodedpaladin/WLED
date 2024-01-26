@@ -40,6 +40,8 @@ class KettleUsermod : public Usermod {
     SPIClass spiPort;
     static const char _name[];
     static const char _enabled[];
+    static const char _powerled[];
+    static const char _voltage[];
 
 #if 0
     // set your config variables to their boot default value (this can also be done in readFromConfig() or a constructor if you prefer)
@@ -121,114 +123,15 @@ class KettleUsermod : public Usermod {
      */
     void addToJsonInfo(JsonObject& root)
     {
-      // if "u" object does not exist yet wee need to create it
-      JsonObject user = root["u"];
-      if (user.isNull()) user = root.createNestedObject("u");
-
-      //this code adds "u":{"ExampleUsermod":[20," lux"]} to the info object
-      JsonArray lightArr = user.createNestedArray(FPSTR("Steven")); //name
-      lightArr.add(F(" enabled")); //unit
-      lightArr.add(enabled); //value
-      lightArr.add(F(" initDone")); //unit
-      lightArr.add(initDone); //value
-
-      // if you are implementing a sensor usermod, you may publish sensor data
-      JsonObject sensor = root[F("sensor")];
-      if (sensor.isNull()) sensor = root.createNestedObject(F("sensor"));
-      JsonArray temp = sensor.createNestedArray(F("light"));
-
-#if 0
-      spiPort.beginTransaction(SPISettings());
-      u8_t bytes[3] = {0x01, 0xA0, 0x0};
-      u8_t output[3] = {0x0, 0x0, 0x0};
-      spiPort.transferBytes(bytes, output, 3);
-      spiPort.endTransaction();
-      u16_t sample = output[2] + ((output[1] & 0xF) << 8);
-      temp.add(sample);
-      spiPort.beginTransaction(SPISettings());
-      bytes[1] = 0xE0;
-      spiPort.transferBytes(bytes, output, 3);
-      spiPort.endTransaction();
-      sample = output[2] + ((output[1] & 0xF) << 8);
-      temp.add(sample);
-#endif
-#if ENABLE_MCP3202
-      uint16_t a[20];
-      uint16_t b[20];
-      unsigned long start, end;
-      u8_t bytes[3] = {0x01, 0xA0, 0x0};
-      u8_t output[3] = {0x0, 0x0, 0x0};
-      start = millis();
-      for (int i = 0; i < 20; i++) {
-        bytes[1] = 0xA0;
-        spiPort.beginTransaction(SPISettings());
-        spiPort.transferBytes(bytes, output, 3);
-        spiPort.endTransaction();
-        a[i] = output[2] + ((output[1] & 0xF) << 8);
-        bytes[1] = 0xE0;
-        spiPort.beginTransaction(SPISettings());
-        spiPort.transferBytes(bytes, output, 3);
-        spiPort.endTransaction();
-        b[i] = output[2] + ((output[1] & 0xF) << 8);
-        //a[i] = analogRead(9);
-        //b[i] = analogRead(8);
+      JsonObject usermod = root[FPSTR(_name)];
+      if (usermod.isNull())
+      {
+        usermod = root.createNestedObject(FPSTR(_name));
       }
-      end = millis();
-      temp.add(start);
-      for (int i = 0; i < 20; i++) {
-        temp.add(a[i]);
-        temp.add(b[i]);
-      }
-      temp.add(end);
-      temp.add(digitalRead(POWER_LED_PIN));
-  #endif //ENABLE_MCP3202
+      usermod[FPSTR(_powerled)] = digitalRead(POWER_LED_PIN);
 #if ENABLE_MCP3201
-#if 0
-      uint32_t a[20];
-      unsigned long start, end;
-      u8_t bytes[4] = {0x0, 0x0, 0, 0};
-      u8_t output[4] = {0x0, 0x0, 0, 0};
-      start = millis();
-      for (int i = 0; i < 20; i++) {
-        output[0] = 0;
-        output[1] = 0;
-        output[2] = 0;
-        output[3] = 0;
-        bytes[0] = 0;
-        bytes[1] = 0;
-        bytes[2] = 0;
-        bytes[3] = 0;
-        spiPort.beginTransaction(SPISettings(100000, SPI_MSBFIRST, SPI_MODE0));
-        spiPort.transferBytes(bytes, output, 4);
-        spiPort.endTransaction();
-        //a[i] = (output[1] >> 1) + ((output[0] & 0x1F) << 7);
-        //a[i] = output[3] + (output[2] << 8 + (output[1] << 16)) + (output[0] << 24);
-        a[i] = output[0];
-        a[i] = a[i] << 8;
-        a[i] |= output[1];
-        a[i] = a[i] << 8;
-        a[i] |= output[2];
-        a[i] = a[i] << 8;
-        a[i] |= output[3];
-      }
-      end = millis();
-      temp.add(start);
-      for (int i = 0; i < 20; i++) {
-        temp.add((a[i] >> 17) & 0xFFF);
-      }
-      temp.add(end);
-      temp.add(digitalRead(POWER_LED_PIN));
-#else
-      unsigned long start, end;
-      uint16_t reading;
-      start = millis();
-      reading = getADCReading();
-      end = millis();
-      temp.add(start);
-      temp.add(reading);
-      temp.add(end);
-#endif
-  #endif //ENABLE_MCP3201
+      usermod[FPSTR(_voltage)] = getADCReading();
+#endif //ENABLE_MCP3201
     }
 
     // in such case add the following to another usermod:
@@ -285,21 +188,7 @@ class KettleUsermod : public Usermod {
       //Serial.println("Connected to WiFi!");
     }
 
-
-    /*
-     * loop() is called continuously. Here you can check for events, read sensors, etc.
-     * 
-     * Tips:
-     * 1. You can use "if (WLED_CONNECTED)" to check for a successful network connection.
-     *    Additionally, "if (WLED_MQTT_CONNECTED)" is available to check for a connection to an MQTT broker.
-     * 
-     * 2. Try to avoid using the delay() function. NEVER use delays longer than 10 milliseconds.
-     *    Instead, use a timer check as shown here.
-     */
     void loop() {
-      // if usermod is disabled or called during strip updating just exit
-      // NOTE: on very long strips strip.isUpdating() may always return true so update accordingly
-      //DEBUG_PRINTLN(F("steven loop: ") + String(buttonPressed) + F(", time ") + String(millis()));
       if (!enabled || strip.isUpdating()) {
         return;
       }
@@ -614,3 +503,5 @@ void MyExampleUsermod::publishMqtt(const char* state, bool retain)
 
 const char KettleUsermod::_name[]           PROGMEM = "Kettle";
 const char KettleUsermod::_enabled[]        PROGMEM = "enabled";
+const char KettleUsermod::_powerled[]        PROGMEM = "powerled";
+const char KettleUsermod::_voltage[]        PROGMEM = "voltage";
