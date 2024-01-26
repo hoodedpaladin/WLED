@@ -28,6 +28,7 @@
 #define POWER_LED_PIN (6)
 #define POWER_BUTTON_PIN (7)
 #define NUM_TEMPS (5)
+#define VOLTAGE_AVERAGES (32)
 class KettleUsermod : public Usermod {
 
   private:
@@ -38,6 +39,8 @@ class KettleUsermod : public Usermod {
     bool buttonPressed = false;
     bool pleasePressButton = false;
     unsigned long lastTime = 0;
+    uint32_t voltageAverage = 0;
+    unsigned long voltageLastRead = 0;
     SPIClass spiPort;
     static const char _name[];
     static const char _enabled[];
@@ -99,26 +102,23 @@ class KettleUsermod : public Usermod {
      */
     inline bool isEnabled() { return enabled; }
 
-#define AVERAGE_READINGS (4)
     uint16_t getADCReading()
     {
-      uint32_t a = 0;
-      uint16_t temp;
-      unsigned long start, end;
       u8_t bytes[2] = {0, 0};
       u8_t output[2] = {0, 0};
-      for (int i = 0; i < AVERAGE_READINGS; i++) {
-        output[0] = 0;
-        output[1] = 0;
-        bytes[0] = 0;
-        bytes[1] = 0;
-        spiPort.beginTransaction(SPISettings(500000, SPI_MSBFIRST, SPI_MODE0));
-        spiPort.transferBytes(bytes, output, 2);
-        spiPort.endTransaction();
-        a += (output[0] & 0x1F) << 7;
-        a += output[1] >> 1;
-      }
-      return a / AVERAGE_READINGS;
+      spiPort.beginTransaction(SPISettings(500000, SPI_MSBFIRST, SPI_MODE0));
+      spiPort.transferBytes(bytes, output, 2);
+      spiPort.endTransaction();
+      return ((output[0] & 0x1F) << 7) + (output[1] >> 1);
+    }
+
+    void updateVoltage()
+    {
+      uint16_t reading = getADCReading();
+      voltageAverage *= (VOLTAGE_AVERAGES - 1);
+      voltageAverage /= VOLTAGE_AVERAGES;
+      voltageAverage += reading;
+      voltageLastRead = millis();
     }
 
     uint16_t voltageToTemperature(uint16_t voltage)
@@ -151,7 +151,7 @@ class KettleUsermod : public Usermod {
 
     void addToJsonInfo(JsonObject& root)
     {
-      uint16_t voltage = getADCReading();
+      uint16_t voltage = (uint16_t)(voltageAverage / VOLTAGE_AVERAGES);
       JsonObject usermod = root[FPSTR(_name)];
       if (usermod.isNull())
       {
@@ -190,6 +190,8 @@ class KettleUsermod : public Usermod {
     }
 
     void loop() {
+      unsigned long timeNow = millis();
+
       if (!enabled || strip.isUpdating()) {
         return;
       }
@@ -199,7 +201,7 @@ class KettleUsermod : public Usermod {
         buttonPressed = 1;
         pleasePressButton = 0;
         setPressed();
-        lastTime = millis();
+        lastTime = timeNow;
         DEBUG_PRINTF("Pressing button\n");
       }
       else if (buttonPressed && (millis() - lastTime) > 100)
@@ -207,6 +209,11 @@ class KettleUsermod : public Usermod {
         buttonPressed = 0;
         setPressed();
         DEBUG_PRINTF("Releasing button\n");
+      }
+
+      if (timeNow - voltageLastRead >= 20)
+      {
+        updateVoltage();
       }
     }
 
