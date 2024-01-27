@@ -695,6 +695,7 @@ ${inforow("Temperature", temperature)}
 ${inforow("Voltage", i.Kettle.voltage)}
 ${inforow("Boiling", i.Kettle.powerled)}
 ${inforow("Kettle Present", i.Kettle.kettlepresent)}
+${inforow("Current State", i.Kettle.currentstate)}
 </table>`;
 	gId('kv').innerHTML = cn;
 	//  update all sliders in Info

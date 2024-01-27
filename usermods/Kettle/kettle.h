@@ -23,8 +23,8 @@
  */
 
 //class name. Use something descriptive and leave the ": public Usermod" part :)
-#define ENABLE_MCP3202 (0)
 #define ENABLE_MCP3201 (1)
+#define DISABLE_HOLD (0)
 
 #define NUM_BUTTONS  (5)
 #define POWER_BUTTON (0)
@@ -35,8 +35,8 @@
 
 #define POWER_LED_PIN    (6)
 #define POWER_BUTTON_PIN (7)
-#define HOLD_BUTTON_PIN  (8)
-#define HOLD_LED_PIN     (9)
+#define HOLD_BUTTON_PIN  (2)
+#define HOLD_LED_PIN     (1)
 #define BOIL_BUTTON_PIN  (21)
 #define PLUS_BUTTON_PIN  (5)
 #define MINUS_BUTTON_PIN (4)
@@ -53,8 +53,52 @@ enum KettleState {
   STATE_TURNOFF,
   STATE_BOIL_AT_TEMPERATURE_1_OFF,
   STATE_BOIL_AT_TEMPERATURE_2_ON,
-  STATE_BOIL_AT_TEMPERATURE_3_ADJUST_TEMP
+  STATE_BOIL_AT_TEMPERATURE_3_ADJUST_TEMP,
+  STATE_1_ENSURE_OFF,
+  STATE_2_TURN_ON,
+  STATE_3_BOIL,
+  STATE_4_WAIT_FOR_BOIL,
+  STATE_5_ENSURE_OFF,
+  STATE_6_TURN_ON,
+  STATE_7_SET_TEMP_TO_208,
+  STATE_8_LOWER_TEMP_TO_DESIRED,
+  STATE_9_ENACT_HOLD,
+  STATE_10_MAINTAIN_HOLD,
+  STATE_11_TURN_HOLD_OFF,
 };
+
+String getStringFromState(KettleState state)
+{
+  switch (state)
+  {
+    case STATE_IDLE:
+      return "STATE_IDLE";
+    case STATE_1_ENSURE_OFF:
+      return "STATE_1_ENSURE_OFF";
+    case STATE_2_TURN_ON:
+      return "STATE_2_TURN_ON";
+    case STATE_3_BOIL:
+      return "STATE_3_BOIL";
+    case STATE_4_WAIT_FOR_BOIL:
+      return "STATE_4_WAIT_FOR_BOIL";
+    case STATE_5_ENSURE_OFF:
+      return "STATE_5_ENSURE_OFF";
+    case STATE_6_TURN_ON:
+      return "STATE_6_TURN_ON";
+    case STATE_7_SET_TEMP_TO_208:
+      return "STATE_7_SET_TEMP_TO_208";
+    case STATE_8_LOWER_TEMP_TO_DESIRED:
+      return "STATE_8_LOWER_TEMP_TO_DESIRED";
+    case STATE_9_ENACT_HOLD:
+      return "STATE_9_ENACT_HOLD";
+    case STATE_10_MAINTAIN_HOLD:
+      return "STATE_10_MAINTAIN_HOLD";
+    case STATE_11_TURN_HOLD_OFF:
+      return "STATE_11_TURN_HOLD_OFF";
+    default:
+      return "unknown state";
+  }
+}
 
 struct ButtonInfo {
   unsigned long time_pressed;
@@ -71,23 +115,30 @@ class KettleUsermod : public Usermod {
     bool initDone = false;
 
     ButtonInfo buttonInfo[NUM_BUTTONS];
+#if ENABLE_MCP3201
     uint32_t voltageAverage = 0;
     unsigned long voltageLastRead = 0;
+#endif //ENABLE_MCP3201
     //buttonsHeld is true while we are holding a button and for 500ms after. It slows down the state machine so we press buttons slowly.
     bool buttonsHeld = 0;
     unsigned long lastButtonReleaseTime = 0;
     KettleState currentState = STATE_IDLE;
+    KettleState prevState = STATE_IDLE;
     uint16_t currentSetTemperature = 0;
     uint16_t goalSetTemperature = 0;
+    unsigned long maintainedHoldSince = 0;
+    uint32_t desiredHoldTime = 0;
 
     SPIClass spiPort;
     static const char _name[];
     static const char _enabled[];
     static const char _powerled[];
+    static const char _holdled[];
     static const char _voltage[];
     static const char _kettlepresent[];
     static const char _temperature[];
     static const char _hold[];
+    static const char _currentstate[];
     static const uint16_t voltages[];
     static const uint16_t temperatures[];
 
@@ -117,18 +168,25 @@ class KettleUsermod : public Usermod {
     KettleUsermod() : spiPort(SPIClass(FSPI)) {}
 
     // Update any buttons. Return true if any are pressed.
-    void updatePressed(unsigned long time) {
+    void updatePressed(unsigned long time, bool releaseAll) {
       bool anyPressed = 0;
 
       for (int i = 0; i < NUM_BUTTONS; i++)
       {
+#if DISABLE_HOLD
+        if (i == HOLD_BUTTON)
+        {
+          continue;
+        }
+#endif //DISABLE_HOLD
         ButtonInfo *pButtonInfo = &buttonInfo[i];
         if (pButtonInfo->pressed)
         {
-          if ((time - pButtonInfo->time_pressed) >= pButtonInfo->duration)
+          if (releaseAll || ((time - pButtonInfo->time_pressed) >= pButtonInfo->duration))
           {
             pButtonInfo->pressed = 0;
             lastButtonReleaseTime = time;
+            DEBUG_PRINTF("Releasing button of pin %u\n", pButtonInfo->pin);
           } else {
             anyPressed = 1;
           }
@@ -147,7 +205,14 @@ class KettleUsermod : public Usermod {
 
     void pressButton(uint8_t buttonId, unsigned long duration)
     {
+#if DISABLE_HOLD
+        if (buttonId == HOLD_BUTTON)
+        {
+          return;
+        }
+#endif //DISABLE_HOLD
       ButtonInfo *pButtonInfo = &buttonInfo[buttonId];
+      DEBUG_PRINTF("Pressing button of pin %u\n", pButtonInfo->pin);
       pButtonInfo->pressed = 1;
       digitalWrite(pButtonInfo->pin, 0);
       pinMode(pButtonInfo->pin, OUTPUT);
@@ -157,6 +222,7 @@ class KettleUsermod : public Usermod {
       buttonsHeld = 1;
     }
 
+#if ENABLE_MCP3201
     uint16_t getADCReading()
     {
       u8_t bytes[2] = {0, 0};
@@ -175,6 +241,7 @@ class KettleUsermod : public Usermod {
       voltageAverage += reading;
       voltageLastRead = millis();
     }
+#endif //ENABLE_MCP3201
 
     uint16_t voltageToTemperature(uint16_t voltage)
     {
@@ -207,14 +274,16 @@ class KettleUsermod : public Usermod {
 
     void addToJsonInfo(JsonObject& root)
     {
-      uint16_t voltage = (uint16_t)(voltageAverage / VOLTAGE_AVERAGES);
       JsonObject usermod = root[FPSTR(_name)];
       if (usermod.isNull())
       {
         usermod = root.createNestedObject(FPSTR(_name));
       }
       usermod[FPSTR(_powerled)] = digitalRead(POWER_LED_PIN);
+      usermod[FPSTR(_holdled)] = digitalRead(HOLD_LED_PIN);
+      usermod[FPSTR(_currentstate)] = getStringFromState(currentState);
 #if ENABLE_MCP3201
+      uint16_t voltage = (uint16_t)(voltageAverage / VOLTAGE_AVERAGES);
       usermod[FPSTR(_voltage)] = voltage;
       usermod[FPSTR(_kettlepresent)] = voltage < 4070;
       usermod[FPSTR(_temperature)] = voltageToTemperature(voltage);
@@ -231,7 +300,9 @@ class KettleUsermod : public Usermod {
       for (int i = 0; i < NUM_BUTTONS; i++) {
         buttonInfo[i].pressed = 0;
       }
-      updatePressed(millis());
+      pinMode(POWER_LED_PIN, INPUT);
+      pinMode(HOLD_LED_PIN, INPUT);
+      updatePressed(millis(), true);
 
 
 #if ENABLE_MCP3201
@@ -342,6 +413,138 @@ class KettleUsermod : public Usermod {
           currentState = STATE_IDLE;
         }
       }
+      else if (currentState == STATE_1_ENSURE_OFF)
+      {
+        if (!powerled)
+        {
+          currentState = STATE_2_TURN_ON;
+        }
+        else
+        {
+          pressButton(POWER_BUTTON, 100);
+        }
+      }
+      else if (currentState == STATE_2_TURN_ON)
+      {
+        if (powerled)
+        {
+          currentState = STATE_3_BOIL;
+        }
+        else
+        {
+          pressButton(POWER_BUTTON, 100);
+        }
+      }
+      else if (currentState == STATE_3_BOIL)
+      {
+        if (goalSetTemperature == 208)
+        {
+          pressButton(BOIL_BUTTON, 100);
+          currentState = STATE_4_WAIT_FOR_BOIL;
+        }
+        else
+        {
+          currentState = STATE_6_TURN_ON;
+        }
+      }
+      else if (currentState == STATE_4_WAIT_FOR_BOIL)
+      {
+        if (!powerled)
+        {
+          currentState = STATE_5_ENSURE_OFF;
+        }
+      }
+      else if (currentState == STATE_5_ENSURE_OFF)
+      {
+        if (!powerled)
+        {
+          currentState = STATE_6_TURN_ON;
+        }
+        else
+        {
+          pressButton(POWER_BUTTON, 100);
+        }
+      }
+      else if (currentState == STATE_6_TURN_ON)
+      {
+        if (powerled)
+        {
+          pressButton(PLUS_BUTTON, 18000);
+          currentState = STATE_7_SET_TEMP_TO_208;
+          currentSetTemperature = 208;
+        }
+        else
+        {
+          pressButton(POWER_BUTTON, 100);
+        }
+      }
+      else if (currentState == STATE_7_SET_TEMP_TO_208)
+      {
+        currentState = STATE_8_LOWER_TEMP_TO_DESIRED;
+      }
+      else if (currentState == STATE_8_LOWER_TEMP_TO_DESIRED)
+      {
+        if (currentSetTemperature > goalSetTemperature)
+        {
+          pressButton(MINUS_BUTTON, 100);
+          currentSetTemperature--;
+        }
+        else if (currentSetTemperature < goalSetTemperature)
+        {
+          pressButton(PLUS_BUTTON, 100);
+          currentSetTemperature++;
+        }
+        else
+        {
+          currentState = STATE_9_ENACT_HOLD;
+        }
+      }
+      else if (currentState == STATE_9_ENACT_HOLD)
+      {
+        if (desiredHoldTime == 0)
+        {
+          currentState = STATE_IDLE;
+        }
+        else if (holdled)
+        {
+          currentState = STATE_10_MAINTAIN_HOLD;
+          maintainedHoldSince = timeNow;
+        }
+        else
+        {
+          pressButton(HOLD_BUTTON, 100);
+        }
+      }
+      else if (currentState == STATE_10_MAINTAIN_HOLD)
+      {
+        if (desiredHoldTime == 1)
+        {
+          //Do nothing
+          currentState = STATE_IDLE;
+        }
+
+        // Waiting time
+        if (!powerled || !holdled)
+        {
+          currentState = STATE_IDLE;
+        }
+
+        if ((timeNow - maintainedHoldSince) / 1000 >= desiredHoldTime)
+        {
+          currentState = STATE_11_TURN_HOLD_OFF;
+        }
+      }
+      else if (currentState = STATE_11_TURN_HOLD_OFF)
+      {
+        if (!holdled)
+        {
+          currentState = STATE_IDLE;
+        }
+        else
+        {
+          pressButton(HOLD_BUTTON, 100);
+        }
+      }
     }
 
 
@@ -354,22 +557,42 @@ class KettleUsermod : public Usermod {
     }
 
     void loop() {
-      unsigned long timeNow = millis();
-
       if (strip.isUpdating()) {
         return;
       }
 
+      unsigned long timeNow = millis();
+
+#if ENABLE_MCP3201
       if (timeNow - voltageLastRead >= 20)
       {
         updateVoltage();
       }
+      uint16_t voltage = (uint16_t)(voltageAverage / VOLTAGE_AVERAGES);
+#else
+      uint16_t voltage = 3000;
+#endif //ENABLE_MCP3201
+      bool kettlePresent = voltage <= 4070;
+      bool releaseAll = false;
 
-      updatePressed(timeNow);
+      // If the kettle is missing, cease all operation
+      if (!kettlePresent)
+      {
+        currentState = STATE_IDLE;
+        releaseAll = true;
+      }
+
+      updatePressed(timeNow, releaseAll);
       if (!buttonsHeld)
       {
         stateLogic(timeNow);
       }
+
+      if (currentState != prevState)
+      {
+        DEBUG_PRINTF("Entering %s\n", getStringFromState(currentState));
+      }
+      prevState = currentState;
     }
 
 // stole from usermod_v2_klipper_percentage
@@ -389,6 +612,8 @@ class KettleUsermod : public Usermod {
     {
       if (usermod[FPSTR(_enabled)].is<bool>())
       {
+        goalSetTemperature = 208;
+        desiredHoldTime = 0;
         bool enabled = usermod[FPSTR(_enabled)].as<bool>();
         if(enabled)
         {
@@ -397,12 +622,13 @@ class KettleUsermod : public Usermod {
             hold = usermod[FPSTR(_hold)].as<bool>();
           if (hold)
           {
-            currentState = STATE_BOIL_AT_TEMPERATURE_1_OFF;
+            currentState = STATE_1_ENSURE_OFF;
             goalSetTemperature = 176;
+            desiredHoldTime = 1;
           }
           else
           {
-            currentState = STATE_TURNON;
+            currentState = STATE_1_ENSURE_OFF;
           }
         }
         else
@@ -683,9 +909,11 @@ void MyExampleUsermod::publishMqtt(const char* state, bool retain)
 const char KettleUsermod::_name[]           PROGMEM = "Kettle";
 const char KettleUsermod::_enabled[]        PROGMEM = "enabled";
 const char KettleUsermod::_powerled[]        PROGMEM = "powerled";
+const char KettleUsermod::_holdled[]        PROGMEM = "holdled";
 const char KettleUsermod::_voltage[]        PROGMEM = "voltage";
 const char KettleUsermod::_kettlepresent[]        PROGMEM = "kettlepresent";
 const char KettleUsermod::_temperature[]        PROGMEM = "temperature";
 const char KettleUsermod::_hold[]        PROGMEM = "hold";
+const char KettleUsermod::_currentstate[]        PROGMEM = "currentstate";
 const uint16_t KettleUsermod::voltages[NUM_TEMPS] =     {1663, 1985, 2185, 2334, 2539, 2701, 2800, 3106, 3211, 3331, 3459,3728, 3833, 3895, 3922, 3968};
 const uint16_t KettleUsermod::temperatures[NUM_TEMPS] = {2080, 1920, 1810, 1740, 1630, 1540, 1490, 1290, 1240, 1130, 1040, 770,  600,  520,  460,  320};
