@@ -1672,24 +1672,13 @@ function togglePower()
 
 function toggleNl()
 {
-	nlA = !nlA;
-	if (nlA)
-	{
-		showToast(`Timer active. Your light will turn ${nlTar > 0 ? "on":"off"} ${nlMode ? "over":"after"} ${nlDur} minutes.`);
-	} else {
-		showToast('Timer deactivated.');
-	}
-	var obj = {"nl": {"on": nlA}};
+	var obj = {"Kettle":{"enabled":false}};
 	requestJson(obj);
 }
 
 function toggleSync()
 {
-	syncSend = !syncSend;
-	if (syncSend) showToast('Other lights in the network will now sync to this one.');
-	else showToast('This light and other lights in the network will no longer sync.');
-	var obj = {"udpn": {"send": syncSend}};
-	if (syncTglRecv) obj.udpn.recv = syncSend;
+	var obj = {"Kettle":{"enabled":true, "hold":true}};
 	requestJson(obj);
 }
 
