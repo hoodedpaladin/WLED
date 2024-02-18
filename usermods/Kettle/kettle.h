@@ -125,11 +125,10 @@ class KettleUsermod : public Usermod {
     bool buttonsHeld = 0;
     unsigned long lastButtonReleaseTime = 0;
     KettleState currentState = STATE_IDLE;
-    KettleState prevState = STATE_IDLE;
+    unsigned long timeStateEntered = 0;
     uint16_t currentSetTemperature = 0;
     uint16_t plannedSetTemperature = 0;
     uint16_t goalSetTemperature = 0;
-    unsigned long maintainedHoldSince = 0;
     uint32_t desiredHoldTime = 0;
 
     SPIClass spiPort;
@@ -380,6 +379,7 @@ class KettleUsermod : public Usermod {
       }
       logHistory(getStringFromState(currentState) + "->" + getStringFromState(newState));
       currentState = newState;
+      timeStateEntered = millis();
     }
 
     void stateLogic(unsigned long timeNow) {
@@ -501,14 +501,10 @@ class KettleUsermod : public Usermod {
           pressButton(MINUS_BUTTON, getTemperatureDelay(currentSetTemperature - goalSetTemperature));
           plannedSetTemperature = goalSetTemperature;
         }
-        else if (currentSetTemperature < goalSetTemperature)
+        else
         {
           pressButton(PLUS_BUTTON, getTemperatureDelay(goalSetTemperature - currentSetTemperature));
           plannedSetTemperature = goalSetTemperature;
-        }
-        else
-        {
-          setNewState(STATE_9_ENACT_HOLD);
         }
       }
       else if (currentState == STATE_9_ENACT_HOLD)
@@ -517,10 +513,13 @@ class KettleUsermod : public Usermod {
         {
           setNewState(STATE_IDLE);
         }
+        else if ((timeNow - timeStateEntered) < 2000)
+        {
+          // do nothing for a bit
+        }
         else if (holdled)
         {
           setNewState(STATE_10_MAINTAIN_HOLD);
-          maintainedHoldSince = timeNow;
         }
         else
         {
@@ -529,19 +528,17 @@ class KettleUsermod : public Usermod {
       }
       else if (currentState == STATE_10_MAINTAIN_HOLD)
       {
-        if (desiredHoldTime == 1)
+        if (!holdled)
+        {
+          // Hold LED turned off?
+          setNewState(STATE_IDLE);
+        }
+        else if (desiredHoldTime == 1)
         {
           //Do nothing
           setNewState(STATE_IDLE);
         }
-
-        // Waiting time
-        if (!powerled || !holdled)
-        {
-          setNewState(STATE_IDLE);
-        }
-
-        if ((timeNow - maintainedHoldSince) / 1000 >= desiredHoldTime)
+        else if ((timeNow - timeStateEntered) / 1000 >= desiredHoldTime)
         {
           setNewState(STATE_11_TURN_HOLD_OFF);
         }
@@ -667,38 +664,32 @@ class KettleUsermod : public Usermod {
     {
       if (usermod[FPSTR(_enabled)].is<bool>())
       {
-        goalSetTemperature = 208;
-        desiredHoldTime = 0;
         bool enabled = usermod[FPSTR(_enabled)].as<bool>();
         if(enabled)
         {
-          bool hold = false;
+          goalSetTemperature = 208;
+          desiredHoldTime = 0;
           if (usermod[FPSTR(_hold)].is<bool>())
-            hold = usermod[FPSTR(_hold)].as<bool>();
+          {
+            if(usermod[FPSTR(_hold)].as<bool>())
+            {
+              desiredHoldTime = 1;
+            }
+          }
+          else if (usermod[FPSTR(_hold)].is<unsigned int>())
+          {
+            desiredHoldTime = usermod[FPSTR(_hold)].as<unsigned int>();
+          }
           if (usermod[FPSTR(_temperature)].is<unsigned int>())
             goalSetTemperature = usermod[FPSTR(_temperature)].as<unsigned int>();
-          if (hold)
-            desiredHoldTime = 1;
+          logHistory("Starting: temp=" + String(goalSetTemperature) + " hold=" + String(desiredHoldTime));
           setNewState(STATE_1_ENSURE_OFF);
         }
         else
         {
+          logHistory("Turning off");
           setNewState(STATE_TURNOFF);
         }
-      }
-      if (usermod[FPSTR(_plus)].is<unsigned int>())
-      {
-        unsigned int hold = usermod[FPSTR(_plus)].as<unsigned int>();
-
-        pressButton(PLUS_BUTTON, hold);
-        setNewState(STATE_IDLE);
-      }
-      if (usermod[FPSTR(_minus)].is<unsigned int>())
-      {
-        unsigned int hold = usermod[FPSTR(_minus)].as<unsigned int>();
-
-        pressButton(MINUS_BUTTON, hold);
-        setNewState(STATE_IDLE);
       }
     }
   }
@@ -743,7 +734,10 @@ class KettleUsermod : public Usermod {
       default:
         // If the user interacts, then we stop what we're doing
         // Also, forget the known set temperature because that might get adjusted
-        logHistory("Resetting state because of button " + String(button));
+        if ((currentState != STATE_IDLE) || (currentSetTemperature != 0))
+        {
+          logHistory("Resetting state because of button " + String(button));
+        }
         currentSetTemperature = 0;
         setNewState(STATE_IDLE);
         break;
