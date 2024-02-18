@@ -55,7 +55,6 @@ enum KettleState {
   STATE_TURNOFF,
   STATE_1_ENSURE_OFF,
   STATE_2_TURN_ON,
-  STATE_3_BOIL,
   STATE_4_WAIT_FOR_BOIL,
   STATE_5_ENSURE_OFF,
   STATE_6_TURN_ON,
@@ -78,8 +77,6 @@ String getStringFromState(KettleState state)
       return "STATE_1_ENSURE_OFF";
     case STATE_2_TURN_ON:
       return "STATE_2_TURN_ON";
-    case STATE_3_BOIL:
-      return "STATE_3_BOIL";
     case STATE_4_WAIT_FOR_BOIL:
       return "STATE_4_WAIT_FOR_BOIL";
     case STATE_5_ENSURE_OFF:
@@ -120,6 +117,8 @@ class KettleUsermod : public Usermod {
 #if ENABLE_MCP3201
     uint32_t voltageAverage = 0;
     unsigned long voltageLastRead = 0;
+    uint16_t voltage;
+    uint16_t temperature;
 #endif //ENABLE_MCP3201
     //buttonsHeld is true while we are holding a button and for 500ms after. It slows down the state machine so we press buttons slowly.
     bool buttonsHeld = 0;
@@ -223,6 +222,8 @@ class KettleUsermod : public Usermod {
       voltageAverage /= VOLTAGE_AVERAGES;
       voltageAverage += reading;
       voltageLastRead = millis();
+      voltage = voltageAverage / VOLTAGE_AVERAGES;
+      temperature = voltageToTemperature(voltage);
     }
 #endif //ENABLE_MCP3201
 
@@ -266,10 +267,9 @@ class KettleUsermod : public Usermod {
       usermod[FPSTR(_holdled)] = digitalRead(HOLD_LED_PIN);
       usermod[FPSTR(_currentstate)] = getStringFromState(currentState);
 #if ENABLE_MCP3201
-      uint16_t voltage = (uint16_t)(voltageAverage / VOLTAGE_AVERAGES);
       usermod[FPSTR(_voltage)] = voltage;
       usermod[FPSTR(_kettlepresent)] = voltage < 4070;
-      usermod[FPSTR(_temperature)] = voltageToTemperature(voltage);
+      usermod[FPSTR(_temperature)] = temperature;
 #endif //ENABLE_MCP3201
 
 #if ENABLE_HISTORY
@@ -341,7 +341,7 @@ class KettleUsermod : public Usermod {
       initDone = true;
     }
 
-    void setNewState(KettleState newState)
+    void setNewState(KettleState newState, String reason)
     {
       if (newState == currentState)
         return;
@@ -355,7 +355,14 @@ class KettleUsermod : public Usermod {
       {
         currentSetTemperature = 0;
       }
-      logHistory(getStringFromState(currentState) + "->" + getStringFromState(newState));
+      if (reason == "")
+      {
+        logHistory(getStringFromState(currentState) + "->" + getStringFromState(newState));
+      }
+      else
+      {
+        logHistory(getStringFromState(currentState) + "->" + getStringFromState(newState) + " (" + reason + ")");
+      }
       currentState = newState;
       timeStateEntered = millis();
     }
@@ -368,7 +375,7 @@ class KettleUsermod : public Usermod {
       {
         if (!powerled)
         {
-          setNewState(STATE_IDLE);
+          setNewState(STATE_IDLE, "");
         }
         else
         {
@@ -379,7 +386,7 @@ class KettleUsermod : public Usermod {
       {
         if (!powerled)
         {
-          setNewState(STATE_2_TURN_ON);
+          setNewState(STATE_2_TURN_ON, "");
         }
         else
         {
@@ -390,37 +397,29 @@ class KettleUsermod : public Usermod {
       {
         if (powerled)
         {
-          setNewState(STATE_3_BOIL);
+          setNewState(STATE_4_WAIT_FOR_BOIL, "");
         }
         else
         {
           pressButton(POWER_BUTTON, 100);
         }
       }
-      else if (currentState == STATE_3_BOIL)
-      {
-        if (goalSetTemperature == 208)
-        {
-          pressButton(BOIL_BUTTON, 100);
-          setNewState(STATE_4_WAIT_FOR_BOIL);
-        }
-        else
-        {
-          setNewState(STATE_6_TURN_ON);
-        }
-      }
       else if (currentState == STATE_4_WAIT_FOR_BOIL)
       {
         if (!powerled)
         {
-          setNewState(STATE_5_ENSURE_OFF);
+          setNewState(STATE_5_ENSURE_OFF, "Power finished");
+        }
+        else if ((temperature / 10) >= goalSetTemperature)
+        {
+          setNewState(STATE_5_ENSURE_OFF, "Temperature reached");
         }
       }
       else if (currentState == STATE_5_ENSURE_OFF)
       {
         if (!powerled)
         {
-          setNewState(STATE_6_TURN_ON);
+          setNewState(STATE_6_TURN_ON, "");
         }
         else
         {
@@ -431,7 +430,7 @@ class KettleUsermod : public Usermod {
       {
         if (powerled)
         {
-          setNewState(STATE_7_ESTABLISH_KNOWN_TEMPERATURE);
+          setNewState(STATE_7_ESTABLISH_KNOWN_TEMPERATURE, "");
           plannedSetTemperature = 0;
         }
         else
@@ -449,7 +448,7 @@ class KettleUsermod : public Usermod {
         }
         if (currentSetTemperature != 0)
         {
-          setNewState(STATE_8_LOWER_TEMP_TO_DESIRED);
+          setNewState(STATE_8_LOWER_TEMP_TO_DESIRED, "");
         }
         else if (goalSetTemperature >= ((208 + 140) / 2))
         {
@@ -472,7 +471,7 @@ class KettleUsermod : public Usermod {
         }
         if (currentSetTemperature == goalSetTemperature)
         {
-          setNewState(STATE_9_ENACT_HOLD);
+          setNewState(STATE_9_ENACT_HOLD, "");
         }
         else if (currentSetTemperature > goalSetTemperature)
         {
@@ -489,7 +488,7 @@ class KettleUsermod : public Usermod {
       {
         if (desiredHoldTime == 0)
         {
-          setNewState(STATE_IDLE);
+          setNewState(STATE_IDLE, "No hold");
         }
         else if ((timeNow - timeStateEntered) < 2000)
         {
@@ -497,7 +496,12 @@ class KettleUsermod : public Usermod {
         }
         else if (holdled)
         {
-          setNewState(STATE_10_MAINTAIN_HOLD);
+          // If we want a specific hold duration, we have to wait for after it's finished.
+          // If we just want the generic hold, we don't have to wait.
+          if ((desiredHoldTime == 0) || !powerled)
+          {
+            setNewState(STATE_10_MAINTAIN_HOLD, "");
+          }
         }
         else
         {
@@ -509,23 +513,23 @@ class KettleUsermod : public Usermod {
         if (!holdled)
         {
           // Hold LED turned off?
-          setNewState(STATE_IDLE);
+          setNewState(STATE_IDLE, "Hold LED disappeared");
         }
         else if (desiredHoldTime == 1)
         {
           //Do nothing
-          setNewState(STATE_IDLE);
+          setNewState(STATE_IDLE, "No hold duration specified");
         }
         else if ((timeNow - timeStateEntered) / 1000 >= desiredHoldTime)
         {
-          setNewState(STATE_11_TURN_HOLD_OFF);
+          setNewState(STATE_11_TURN_HOLD_OFF, "Duration over");
         }
       }
       else if (currentState == STATE_11_TURN_HOLD_OFF)
       {
         if (!holdled)
         {
-          setNewState(STATE_IDLE);
+          setNewState(STATE_IDLE,"");
         }
         else
         {
@@ -555,7 +559,6 @@ class KettleUsermod : public Usermod {
       {
         updateVoltage();
       }
-      uint16_t voltage = (uint16_t)(voltageAverage / VOLTAGE_AVERAGES);
 #else
       uint16_t voltage = 3000;
 #endif //ENABLE_MCP3201
@@ -565,7 +568,7 @@ class KettleUsermod : public Usermod {
       // If the kettle is missing, cease all operation
       if (!kettlePresent)
       {
-        setNewState(STATE_IDLE);
+        setNewState(STATE_IDLE, "Kettle missing");
         releaseAll = true;
       }
 
@@ -660,13 +663,12 @@ class KettleUsermod : public Usermod {
           }
           if (usermod[FPSTR(_temperature)].is<unsigned int>())
             goalSetTemperature = usermod[FPSTR(_temperature)].as<unsigned int>();
-          logHistory("Starting: temp=" + String(goalSetTemperature) + " hold=" + String(desiredHoldTime));
-          setNewState(STATE_1_ENSURE_OFF);
+          String message = "Starting: temp=" + String(goalSetTemperature) + " hold=" + String(desiredHoldTime);
+          setNewState(STATE_1_ENSURE_OFF, message);
         }
         else
         {
-          logHistory("Turning off");
-          setNewState(STATE_TURNOFF);
+          setNewState(STATE_TURNOFF, "turning off");
         }
       }
     }
@@ -717,11 +719,10 @@ class KettleUsermod : public Usermod {
           logHistory("Resetting state because of button " + String(button));
         }
         currentSetTemperature = 0;
-        setNewState(STATE_IDLE);
+        setNewState(STATE_IDLE, "button " + String(button));
         break;
     }
   }
-
 };
 
 const char KettleUsermod::_name[]           PROGMEM = "Kettle";
