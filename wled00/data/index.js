@@ -256,25 +256,25 @@ function onLoad()
 		loadBg(cfg.theme.bg.url);
 	if (cfg.comp.css) loadSkinCSS('skinCss');
 
-	selectSlot(0);
 	updateTablinks(0);
 	pmtLS = localStorage.getItem('wledPmt');
 
 	// Load initial data
-	loadPalettes(()=>{
-		// fill effect extra data array
-		loadFXData(()=>{
-			// load and populate effects
-			loadFX(()=>{
-				setTimeout(()=>{ // ESP8266 can't handle quick requests
-					loadPalettesData(()=>{
-						requestJson();// will load presets and create WS
-					});
-				},100);
-			});
-		});
-	});
-	resetUtil();
+	requestJson();// will load presets and create WS
+	//loadPalettes(()=>{
+	//	// fill effect extra data array
+	//	loadFXData(()=>{
+	//		// load and populate effects
+	//		loadFX(()=>{
+	//			setTimeout(()=>{ // ESP8266 can't handle quick requests
+	//				loadPalettesData(()=>{
+	//					requestJson();// will load presets and create WS
+	//				});
+	//			},100);
+	//		});
+	//	});
+	//});
+	//resetUtil();
 
 	d.addEventListener("visibilitychange", handleVisibilityChange, false);
 	//size();
@@ -620,15 +620,15 @@ function parseInfo(i) {
 	mw = i.leds.matrix ? i.leds.matrix.w : 0;
 	mh = i.leds.matrix ? i.leds.matrix.h : 0;
 	isM = mw>0 && mh>0;
-	if (!isM) {
-		gId("filter0D").classList.remove('hide');
-		gId("filter1D").classList.add('hide');
-		gId("filter2D").classList.add('hide');
-	} else {
-		gId("filter0D").classList.add('hide');
-		gId("filter1D").classList.remove('hide');
-		gId("filter2D").classList.remove('hide');
-	}
+	//if (!isM) {
+	//	gId("filter0D").classList.remove('hide');
+	//	gId("filter1D").classList.add('hide');
+	//	gId("filter2D").classList.add('hide');
+	//} else {
+	//	gId("filter0D").classList.add('hide');
+	//	gId("filter1D").classList.remove('hide');
+	//	gId("filter2D").classList.remove('hide');
+	//}
 //	if (i.noaudio) {
 //		gId("filterVol").classList.add("hide");
 //		gId("filterFreq").classList.add("hide");
@@ -676,26 +676,28 @@ function populateInfo(i)
 //	if (i.ver.includes("-bl")) vcn = "Supāku";
 	if (i.cn) vcn = i.cn;
 
-	cn += `v${i.ver} "${vcn}"<br><br><table>
+	var statetext = "Off";
+	if (i.Kettle.powerled) statetext = "Boiling";
+	else if (i.Kettle.holdled) statetext = "Holding";
+
+	cn += `<table>
 ${urows}
 ${urows===""?'':'<tr><td colspan=2><hr style="height:1px;border-width:0;color:gray;background-color:gray"></td></tr>'}
 ${i.opt&0x100?inforow("Debug","<button class=\"btn btn-xs\" onclick=\"requestJson({'debug':"+(i.opt&0x0080?"false":"true")+"});\"><i class=\"icons "+(i.opt&0x0080?"on":"off")+"\">&#xe08f;</i></button>"):''}
+${inforow("Temperature", temperature)}
+${inforow("State", statetext)}
+${inforow("Kettle Present", i.Kettle.kettlepresent)}
+${inforow("Current State", i.Kettle.currentstate)}
+${inforow("Voltage", i.Kettle.voltage)}
 ${inforow("Build",i.vid)}
 ${inforow("Signal strength",i.wifi.signal +"% ("+ i.wifi.rssi, " dBm)")}
 ${inforow("Uptime",getRuntimeStr(i.uptime))}
 ${inforow("Time",i.time)}
 ${inforow("Free heap",heap," kB")}
 ${i.psram?inforow("Free PSRAM",(i.psram/1024).toFixed(1)," kB"):""}
-${inforow("Estimated current",pwru)}
-${inforow("Average FPS",i.leds.fps)}
 ${inforow("MAC address",i.mac)}
 ${inforow("Filesystem",i.fs.u + "/" + i.fs.t + " kB (" +Math.round(i.fs.u*100/i.fs.t) + "%)")}
 ${inforow("Environment",i.arch + " " + i.core + " (" + i.lwip + ")")}
-${inforow("Temperature", temperature)}
-${inforow("Voltage", i.Kettle.voltage)}
-${inforow("Boiling", i.Kettle.powerled)}
-${inforow("Kettle Present", i.Kettle.kettlepresent)}
-${inforow("Current State", i.Kettle.currentstate)}
 </table>`;
 	gId('kv').innerHTML = cn;
 	//  update all sliders in Info
@@ -829,7 +831,7 @@ function populateSegments(s)
 
 	gId('segcont').innerHTML = cn;
 	let noNewSegs = (lowestUnused >= maxSeg);
-	resetUtil(noNewSegs);
+	//resetUtil(noNewSegs);
 	if (gId('selall')) gId('selall').checked = true;
 	for (var i = 0; i <= lSeg; i++) {
 		if (!gId(`seg${i}`)) continue;
@@ -1196,44 +1198,44 @@ function updatePA()
 
 function updateUI()
 {
-	gId('buttonPower').className = (isOn) ? 'active':'';
-	gId('buttonNl').className = (nlA) ? 'active':'';
-	gId('buttonSync').className = (syncSend) ? 'active':'';
+	//gId('buttonPower').className = (isOn) ? 'active':'';
+	//gId('buttonNl').className = (nlA) ? 'active':'';
+	//gId('buttonSync').className = (syncSend) ? 'active':'';
 
-	updateSelectedFx();
-	updateSelectedPalette(selectedPal); // must be after updateSelectedFx() to un-hide color slots for * palettes
+	//updateSelectedFx();
+	//updateSelectedPalette(selectedPal); // must be after updateSelectedFx() to un-hide color slots for * palettes
 
-	updateTrail(gId('sliderBri'));
-	updateTrail(gId('sliderSpeed'));
-	updateTrail(gId('sliderIntensity'));
+	//updateTrail(gId('sliderBri'));
+	//updateTrail(gId('sliderSpeed'));
+	//updateTrail(gId('sliderIntensity'));
 
-	updateTrail(gId('sliderC1'));
-	updateTrail(gId('sliderC2'));
-	updateTrail(gId('sliderC3'));
+	//updateTrail(gId('sliderC1'));
+	//updateTrail(gId('sliderC2'));
+	//updateTrail(gId('sliderC3'));
 
-	if (hasRGB) {
-		updateTrail(gId('sliderR'));
-		updateTrail(gId('sliderG'));
-		updateTrail(gId('sliderB'));
-	}
-	if (hasWhite) updateTrail(gId('sliderW'));
+	//if (hasRGB) {
+	//	updateTrail(gId('sliderR'));
+	//	updateTrail(gId('sliderG'));
+	//	updateTrail(gId('sliderB'));
+	//}
+	//if (hasWhite) updateTrail(gId('sliderW'));
 
-	var ccfg = cfg.comp.colors;
-	gId('wwrap').style.display   = (hasWhite) ? "block":"none";               // white channel
-	gId('wbal').style.display    = (hasCCT) ? "block":"none";                 // white balance
-	gId('hexw').style.display    = (ccfg.hex) ? "block":"none";               // HEX input
-	gId('picker').style.display  = (hasRGB && ccfg.picker) ? "block":"none";  // color picker wheel
-	gId('hwrap').style.display   = (hasRGB && !ccfg.picker) ? "block":"none"; // hue slider
-	gId('swrap').style.display   = (hasRGB && !ccfg.picker) ? "block":"none"; // saturation slider
-	gId('vwrap').style.display   = (hasRGB) ? "block":"none";                 // brightness (value) slider
-	gId('kwrap').style.display   = (hasRGB && !hasCCT) ? "block":"none";      // Kelvin slider
-	gId('rgbwrap').style.display = (hasRGB && ccfg.rgb) ? "block":"none";     // RGB sliders
-	gId('qcs-w').style.display   = (hasRGB && ccfg.quick) ? "block":"none";   // quick selection
+	//var ccfg = cfg.comp.colors;
+	//gId('wwrap').style.display   = (hasWhite) ? "block":"none";               // white channel
+	//gId('wbal').style.display    = (hasCCT) ? "block":"none";                 // white balance
+	//gId('hexw').style.display    = (ccfg.hex) ? "block":"none";               // HEX input
+	//gId('picker').style.display  = (hasRGB && ccfg.picker) ? "block":"none";  // color picker wheel
+	//gId('hwrap').style.display   = (hasRGB && !ccfg.picker) ? "block":"none"; // hue slider
+	//gId('swrap').style.display   = (hasRGB && !ccfg.picker) ? "block":"none"; // saturation slider
+	//gId('vwrap').style.display   = (hasRGB) ? "block":"none";                 // brightness (value) slider
+	//gId('kwrap').style.display   = (hasRGB && !hasCCT) ? "block":"none";      // Kelvin slider
+	//gId('rgbwrap').style.display = (hasRGB && ccfg.rgb) ? "block":"none";     // RGB sliders
+	//gId('qcs-w').style.display   = (hasRGB && ccfg.quick) ? "block":"none";   // quick selection
 	//gId('csl').style.display     = (hasRGB || hasWhite) ? "block":"none";     // color selectors (hide for On/Off bus)
 	//gId('palw').style.display    = (hasRGB) ? "inline-block":"none";          // palettes are shown/hidden in setEffectParameters()
 
 	updatePA();
-	updatePSliders();
+	//updatePSliders();
 }
 
 function updateSelectedPalette(s)
@@ -1274,7 +1276,6 @@ function updateSelectedFx()
 	var selectedEffect = parent.querySelector(`.lstI[data-id="${selectedFx}"]`);
 	if (selectedEffect) {
 		selectedEffect.classList.add('selected');
-		setEffectParameters(selectedFx);
 		// hide non-0D effects if segment only has 1 pixel (0D)
 		var fxs = parent.querySelectorAll('.lstI');
 		for (const fx of fxs) {
@@ -1360,7 +1361,7 @@ function readState(s,command=false)
 	if (s.success) return true; // no data to process
 
 	isOn = s.on;
-	gId('sliderBri').value = s.bri;
+	//gId('sliderBri').value = s.bri;
 	nlA = s.nl.on;
 	nlDur = s.nl.dur;
 	nlTar = s.nl.tbri;
@@ -1370,64 +1371,7 @@ function readState(s,command=false)
 	else currentPreset = s.pl;
 
 	tr = s.transition;
-	gId('tt').value = tr/10;
-
-	populateSegments(s);
-	var selc=0;
-	var sellvl=0; // 0: selc is invalid, 1: selc is mainseg, 2: selc is first selected
-	hasRGB = hasWhite = hasCCT = false;
-	segLmax = 0;
-	for (let i = 0; i < (s.seg||[]).length; i++)
-	{
-		if (sellvl == 0 && s.seg[i].id == s.mainseg) {
-			selc = i;
-			sellvl = 1;
-		}
-		if (s.seg[i].sel) {
-			if (sellvl < 2) selc = i; // get first selected segment
-			sellvl = 2;
-			var lc = lastinfo.leds.seglc[s.seg[i].id];
-			hasRGB   |= !!(lc & 0x01);
-			hasWhite |= !!(lc & 0x02);
-			hasCCT   |= !!(lc & 0x04);
-			let sLen = (s.seg[i].stop - s.seg[i].start)*(s.seg[i].stopY?(s.seg[i].stopY - s.seg[i].startY):1);
-			segLmax = segLmax < sLen ? sLen : segLmax;
-		}
-	}
-	var i=s.seg[selc];
-	if (sellvl == 1) {
-		var lc = lastinfo.leds.seglc[i.id];
-		hasRGB   = !!(lc & 0x01);
-		hasWhite = !!(lc & 0x02);
-		hasCCT   = !!(lc & 0x04);
-	}
-	if (!i) {
-		showToast('No Segments!', true);
-		updateUI();
-		return true;
-	}
-
-	if (s.seg.length>2) d.querySelectorAll(".pop").forEach((e)=>{e.classList.remove("hide");});
-
-	var cd = gId('csl').children;
-	for (let e = cd.length-1; e >= 0; e--) {
-		cd[e].dataset.r = i.col[e][0];
-		cd[e].dataset.g = i.col[e][1];
-		cd[e].dataset.b = i.col[e][2];
-		if (hasWhite || (!hasRGB && !hasWhite)) { cd[e].dataset.w = i.col[e][3]; }
-		setCSL(cd[e]);
-	}
-	selectSlot(csel);
-	if (i.cct != null && i.cct>=0) gId("sliderA").value = i.cct;
-
-	gId('sliderSpeed').value = i.sx;
-	gId('sliderIntensity').value = i.ix;
-	gId('sliderC1').value  = i.c1 ? i.c1 : 0;
-	gId('sliderC2').value  = i.c2 ? i.c2 : 0;
-	gId('sliderC3').value  = i.c3 ? i.c3 : 0;
-	gId('checkO1').checked = !(!i.o1);
-	gId('checkO2').checked = !(!i.o2);
-	gId('checkO3').checked = !(!i.o3);
+	//gId('tt').value = tr/10;
 
 	if (s.error && s.error != 0) {
 	  var errstr = "";
@@ -1451,147 +1395,9 @@ function readState(s,command=false)
 	  showToast('Error ' + s.error + ": " + errstr, true);
 	}
 
-	selectedPal = i.pal;
-	selectedFx = i.fx;
-	redrawPalPrev(); // if any color changed (random palette did at least)
+	//redrawPalPrev(); // if any color changed (random palette did at least)
 	updateUI();
 	return true;
-}
-
-// control HTML elements for Slider and Color Control (original ported form WLED-SR)
-// Technical notes
-// ===============
-// If an effect name is followed by an @, slider and color control is effective.
-// If not effective then:
-//      - For AC effects (id<128) 2 sliders and 3 colors and the palette will be shown
-//      - For SR effects (id>128) 5 sliders and 3 colors and the palette will be shown
-// If effective (@)
-//      - a ; separates slider controls (left) from color controls (middle) and palette control (right)
-//      - if left, middle or right is empty no controls are shown
-//      - a , separates slider controls (max 5) or color controls (max 3). Palette has only one value
-//      - a ! means that the default is used.
-//             - For sliders: Effect speeds, Effect intensity, Custom 1, Custom 2, Custom 3
-//             - For colors: Fx color, Background color, Custom
-//             - For palette: prompt for color palette OR palette ID if numeric (will hide palette selection)
-//
-// Note: If palette is on and no colors are specified 1,2 and 3 is shown in each color circle.
-//       If a color is specified, the 1,2 or 3 is replaced by that specification.
-// Note: Effects can override default pattern behaviour
-//       - FadeToBlack can override the background setting
-//       - Defining SEGCOL(<i>) can override a specific palette using these values (e.g. Color Gradient)
-function setEffectParameters(idx)
-{
-	if (!(Array.isArray(fxdata) && fxdata.length>idx)) return;
-	var controlDefined = fxdata[idx].length;
-	var effectPar = fxdata[idx];
-	var effectPars = (effectPar == '')?[]:effectPar.split(";");
-	var slOnOff = (effectPars.length==0 || effectPars[0]=='')?[]:effectPars[0].split(",");
-	var coOnOff = (effectPars.length<2  || effectPars[1]=='')?[]:effectPars[1].split(",");
-	var paOnOff = (effectPars.length<3  || effectPars[2]=='')?[]:effectPars[2].split(",");
-
-	// set html slider items on/off
-	let nSliders = 5;
-	for (let i=0; i<nSliders; i++) {
-		var slider = gId("slider" + i);
-		var label = gId("sliderLabel" + i);
-		// if (not controlDefined and for AC speed or intensity and for SR all sliders) or slider has a value
-		if ((!controlDefined && i < ((idx<128)?2:nSliders)) || (slOnOff.length>i && slOnOff[i] != "")) {
-			if (slOnOff.length>i && slOnOff[i]!="!") label.innerHTML = slOnOff[i];
-			else if (i==0)                           label.innerHTML = "Effect speed";
-			else if (i==1)                           label.innerHTML = "Effect intensity";
-			else                                     label.innerHTML = "Custom" + (i-1);
-			slider.classList.remove('hide');
-		} else {
-			slider.classList.add('hide');
-		}
-	}
-	if (slOnOff.length>5) { // up to 3 checkboxes
-		gId('fxopt').classList.remove('fade');
-		for (let i = 0; i<3; i++) {
-			if (5+i<slOnOff.length && slOnOff[5+i]!=='') {
-				gId('opt'+i).classList.remove('hide');
-				gId('optLabel'+i).innerHTML = slOnOff[5+i]=="!" ? 'Option' : slOnOff[5+i].substr(0,16);
-			} else
-				gId('opt'+i).classList.add('hide');
-		}
-	} else {
-		gId('fxopt').classList.add('fade');
-	}
-
-	// set the bottom position of selected effect (sticky) as the top of sliders div
-	function setSelectedEffectPosition() {
-		let top = parseInt(getComputedStyle(gId("sliders")).height);
-		top += 5;
-		let sel = d.querySelector('#fxlist .selected');
-		if (sel) sel.style.bottom = top + "px"; // we will need to remove this when unselected (in setFX())
-	}
-
-	setSelectedEffectPosition();
-	setInterval(setSelectedEffectPosition,750);
-	// set html color items on/off
-	var cslLabel = '';
-	var sep = '';
-	var cslCnt = 0, oCsel = csel;
-	for (let i=0; i<gId("csl").children.length; i++) {
-		var btn = gId("csl" + i);
-		// if no controlDefined or coOnOff has a value
-		if (coOnOff.length>i && coOnOff[i] != "") {
-			btn.classList.remove('hide');
-			btn.dataset.hide = 0;
-			if (coOnOff[i] != "!") {
-				var abbreviation = coOnOff[i].substr(0,2);
-				btn.innerHTML = abbreviation;
-				if (abbreviation != coOnOff[i]) {
-					cslLabel += sep + abbreviation + '=' + coOnOff[i];
-					sep = ', ';
-				}
-			}
-			else if (i==0) btn.innerHTML = "Fx";
-			else if (i==1) btn.innerHTML = "Bg";
-			else btn.innerHTML = "Cs";
-			if (!cslCnt || oCsel==i) selectSlot(i); // select 1st displayed slot or old one
-			cslCnt++;
-		} else if (!controlDefined) { // if no controls then all buttons should be shown for color 1..3
-			btn.classList.remove('hide');
-			btn.dataset.hide = 0;
-			btn.innerHTML = `${i+1}`;
-			if (!cslCnt || oCsel==i) selectSlot(i); // select 1st displayed slot or old one
-			cslCnt++;
-		} else {
-			btn.classList.add('hide');
-			btn.dataset.hide = 1;
-			btn.innerHTML = `${i+1}`; // name hidden buttons 1..3 for * palettes
-		}
-	}
-	gId("cslLabel").innerHTML = cslLabel;
-
-	// set palette on/off
-	var palw = gId("palw"); // wrapper
-	var pall = gId("pall");	// label
-	// if not controlDefined or palette has a value
-	if (hasRGB && ((!controlDefined) || (paOnOff.length>0 && paOnOff[0]!="" && isNaN(paOnOff[0])))) {
-		palw.style.display = "inline-block";
-		if (paOnOff.length>0 && paOnOff[0].indexOf("=")>0) {
-			// embeded default values
-			var dPos = paOnOff[0].indexOf("=");
-			var v = Math.max(0,Math.min(255,parseInt(paOnOff[0].substr(dPos+1))));
-			paOnOff[0] = paOnOff[0].substring(0,dPos);
-		}
-		if (paOnOff.length>0 && paOnOff[0] != "!") pall.innerHTML = paOnOff[0];
-		else                                       pall.innerHTML = '<i class="icons sel-icon" onclick="tglHex()">&#xe2b3;</i> Color palette';
-	} else {
-		// disable palette list
-		pall.innerHTML = '<i class="icons sel-icon" onclick="tglHex()">&#xe2b3;</i> Color palette not used';
-		palw.style.display = "none";
-	}
-	// not all color selectors shown, hide palettes created from color selectors
-	// NOTE: this will disallow user to select "* Color ..." palettes which may be undesirable in some cases or for some users
-	//for (let e of (gId('pallist').querySelectorAll('.lstI')||[])) {
-	//	let fltr = "* C";
-	//	if (cslCnt==1 && csel==0) fltr = "* Colors";
-	//	else if (cslCnt==2) fltr = "* Colors Only";
-	//	if (cslCnt < 3 && e.querySelector('.lstIname').innerText.indexOf(fltr)>=0) e.classList.add('hide'); else e.classList.remove('hide');
-	//}
 }
 
 var jsonTimeout;
@@ -1608,11 +1414,11 @@ function requestJson(command=null)
 	if (command) {
 		command.v = true; // force complete /json/si API response
 		command.time = Math.floor(Date.now() / 1000);
-		var t = gId('tt');
-		if (t.validity.valid && command.transition==null) {
-			var tn = parseInt(t.value*10);
-			if (tn != tr) command.transition = tn;
-		}
+		//var t = gId('tt');
+		//if (t.validity.valid && command.transition==null) {
+		//	var tn = parseInt(t.value*10);
+		//	if (tn != tr) command.transition = tn;
+		//}
 		req = JSON.stringify(command);
 		if (req.length > 1340) useWs = false; // do not send very long requests over websocket
 		if (req.length >  500 && lastinfo && lastinfo.arch == "esp8266") useWs = false; // esp8266 can only handle 500 bytes
@@ -1645,7 +1451,7 @@ function requestJson(command=null)
 		if (json.info) {
 			let i = json.info;
 			parseInfo(i);
-			populatePalettes(i);
+			//populatePalettes(i);
 			if (isInfo) populateInfo(i);
 		}
 		var s = json.state ? json.state : json;
@@ -1965,7 +1771,7 @@ function makePUtil()
 		behavior: 'smooth',
 		block: 'center'
 	});
-	gId('psFind').classList.remove('staytop');
+	//gId('psFind').classList.remove('staytop');
 }
 
 function makePlEntry(p,i)
@@ -2010,17 +1816,16 @@ function makePlUtil()
 		behavior: 'smooth',
 		block: 'center'
 	});
-	gId('psFind').classList.remove('staytop');
+	//gId('psFind').classList.remove('staytop');
 }
 
 function resetPUtil()
 {
-	gId('psFind').classList.add('staytop');
+	//gId('psFind').classList.add('staytop');
 	let p = gId('putil');
 	p.classList.add('staybot');
 	p.classList.remove('pres');
-	p.innerHTML = `<button class="btn btn-s" onclick="makePUtil()" style="float:left;"><i class="icons btn-icon">&#xe18a;</i>Preset</button>`
-	+ `<button class="btn btn-s" onclick="makePlUtil()" style="float:right;"><i class="icons btn-icon">&#xe18a;</i>Playlist</button>`;
+	p.innerHTML = `<button class="btn btn-s" onclick="makePUtil()" style="float:left;"><i class="icons btn-icon">&#xe18a;</i>Preset</button>`;
 }
 
 function tglCs(i)
@@ -2134,7 +1939,7 @@ function setSeg(s)
 		obj.seg.of  = ofs;
 		if (isM && gId(`seg${s}tp`)) obj.seg.tp = gId(`seg${s}tp`).checked;
 	}
-	resetUtil(); // close add segment dialog just in case
+	//resetUtil(); // close add segment dialog just in case
 	requestJson(obj);
 }
 
@@ -2407,20 +2212,6 @@ function delP(i) {
 		bt.innerHTML = "<i class='icons btn-icon'>&#xe037;</i>Delete!";
 		bt.dataset.cnf = 1;
 	}
-}
-
-function selectSlot(b)
-{
-	csel = b;
-	var cd = gId('csl').children;
-	for (let i of cd) i.classList.remove('xxs-w');
-	cd[b].classList.add('xxs-w');
-	setPicker(rgbStr(cd[b].dataset));
-	// force slider update on initial load (picker "color:change" not fired if black)
-	if (cpick.color.value == 0) updatePSliders();
-	gId('sliderW').value = parseInt(cd[b].dataset.w);
-	updateTrail(gId('sliderW'));
-	redrawPalPrev();
 }
 
 // set the color from a hex string. Used by quick color selectors
