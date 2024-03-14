@@ -26,12 +26,14 @@
 #define ENABLE_MCP3201 (1)
 #define DISABLE_HOLD (0)
 
-#define NUM_BUTTONS  (5)
+#define NUM_BUTTONS  (7)
 #define POWER_BUTTON (0)
 #define HOLD_BUTTON  (1)
-#define BOIL_BUTTON  (2)
+#define MINUS_BUTTON (2)
 #define PLUS_BUTTON  (3)
-#define MINUS_BUTTON (4)
+#define BOIL_BUTTON  (4)
+#define PRESET_BUTTON (5)
+#define HEATER_BUTTON (6)
 
 #define POWER_LED_PIN    (6)
 #define POWER_BUTTON_PIN (7)
@@ -40,70 +42,93 @@
 #define BOIL_BUTTON_PIN  (21)
 #define PLUS_BUTTON_PIN  (5)
 #define MINUS_BUTTON_PIN (4)
+#define PRESET_BUTTON_PIN (8)
+#define HEATER_BUTTON_PIN (9)
 
 #define NUM_TEMPS (16)
 #define VOLTAGE_AVERAGES (32)
 
 #define ENABLE_HISTORY (1)
 #if ENABLE_HISTORY
-#define HISTORY_LENGTH (40)
+#define HISTORY_LENGTH (80)
 #define HISTORY_STRINGS (1)
+String history[HISTORY_LENGTH];
+unsigned long historyTimestamp[HISTORY_LENGTH];
+unsigned int nextHistoryEntry = 0;
+unsigned int numHistoryEntries = 0;
+unsigned int consumedHistoryEntries;
 #endif //ENABLE_HISTORY
 
+#define THREADSAFE_ENTER noInterrupts()
+#define THREADSAFE_EXIT interrupts()
+
 enum KettleState {
-  STATE_IDLE,
-  STATE_TURNOFF,
-  STATE_1_ENSURE_OFF,
-  STATE_2_TURN_ON,
-  STATE_4_WAIT_FOR_BOIL,
-  STATE_5_ENSURE_OFF,
-  STATE_6_TURN_ON,
-  STATE_7_ESTABLISH_KNOWN_TEMPERATURE,
-  STATE_8_LOWER_TEMP_TO_DESIRED,
-  STATE_9_ENACT_HOLD,
-  STATE_10_MAINTAIN_HOLD,
-  STATE_11_TURN_HOLD_OFF,
+  S_IDLE,
+  S_TURNOFF,
+  S_1_OFF,
+  S_2_ON,
+  S_3_WAIT,
+  S_4_OFF,
+  S_5_ON,
+  S_6_ESTAB,
+  S_7_ADJ,
+  S_8_HOLD,
+  S_9_MAINTAIN,
+  S_10_OFF,
 };
 
 String getStringFromState(KettleState state)
 {
   switch (state)
   {
-    case STATE_IDLE:
-      return "STATE_IDLE";
-    case STATE_TURNOFF:
-      return "STATE_TURNOFF";
-    case STATE_1_ENSURE_OFF:
-      return "STATE_1_ENSURE_OFF";
-    case STATE_2_TURN_ON:
-      return "STATE_2_TURN_ON";
-    case STATE_4_WAIT_FOR_BOIL:
-      return "STATE_4_WAIT_FOR_BOIL";
-    case STATE_5_ENSURE_OFF:
-      return "STATE_5_ENSURE_OFF";
-    case STATE_6_TURN_ON:
-      return "STATE_6_TURN_ON";
-    case STATE_7_ESTABLISH_KNOWN_TEMPERATURE:
-      return "STATE_7_ESTABLISH_KNOWN_TEMPERATURE";
-    case STATE_8_LOWER_TEMP_TO_DESIRED:
-      return "STATE_8_LOWER_TEMP_TO_DESIRED";
-    case STATE_9_ENACT_HOLD:
-      return "STATE_9_ENACT_HOLD";
-    case STATE_10_MAINTAIN_HOLD:
-      return "STATE_10_MAINTAIN_HOLD";
-    case STATE_11_TURN_HOLD_OFF:
-      return "STATE_11_TURN_HOLD_OFF";
+    case S_IDLE:
+      return "S_IDLE";
+    case S_TURNOFF:
+      return "S_TURNOFF";
+    case S_1_OFF:
+      return "S_1_OFF";
+    case S_2_ON:
+      return "S_2_ON";
+    case S_3_WAIT:
+      return "S_3_WAIT";
+    case S_4_OFF:
+      return "S_4_OFF";
+    case S_5_ON:
+      return "S_5_ON";
+    case S_6_ESTAB:
+      return "S_6_ESTAB";
+    case S_7_ADJ:
+      return "S_7_ADJ";
+    case S_8_HOLD:
+      return "S_8_HOLD";
+    case S_9_MAINTAIN:
+      return "S_9_MAINTAIN";
+    case S_10_OFF:
+      return "S_10_OFF";
     default:
       return "unknown state";
   }
 }
+
+class KettleUsermod;
+
+struct InterruptInfo {
+  KettleUsermod *pKettle;
+  unsigned int buttonNum;
+  bool attached;
+  bool interrupt_seen;
+};
+void interruptHandler(void *pVoid);
 
 struct ButtonInfo {
   unsigned long time_pressed;
   unsigned long duration;
   uint8_t pin;
   uint8_t pressed;
+  uint8_t index;
+  uint8_t monitor;
   unsigned long lastSeenUnpressed;
+  InterruptInfo interruptInfo;
 };
 
 class KettleUsermod : public Usermod {
@@ -123,7 +148,7 @@ class KettleUsermod : public Usermod {
     //buttonsHeld is true while we are holding a button and for 500ms after. It slows down the state machine so we press buttons slowly.
     bool buttonsHeld = 0;
     unsigned long lastButtonReleaseTime = 0;
-    KettleState currentState = STATE_IDLE;
+    KettleState currentState = S_IDLE;
     unsigned long timeStateEntered = 0;
     uint16_t currentSetTemperature = 0;
     uint16_t plannedSetTemperature = 0;
@@ -143,6 +168,8 @@ class KettleUsermod : public Usermod {
     static const char _buttoninfo[];
     static const char _plus[];
     static const char _minus[];
+    static const char _press[];
+    static const char _heating[];
     static const uint16_t voltages[];
     static const uint16_t temperatures[];
 
@@ -168,8 +195,9 @@ class KettleUsermod : public Usermod {
           {
             pButtonInfo->pressed = 0;
             lastButtonReleaseTime = time;
-            DEBUG_PRINTF("Releasing button of pin %u\n", pButtonInfo->pin);
+            //DEBUG_PRINTF("Releasing button of pin %u\n", pButtonInfo->pin);
             logHistory("Release " + String(i));
+            //pinMode(pButtonInfo->pin, INPUT_PULLUP);
             pinMode(pButtonInfo->pin, INPUT);
           } else {
             anyPressed = 1;
@@ -193,12 +221,13 @@ class KettleUsermod : public Usermod {
         }
 #endif //DISABLE_HOLD
       ButtonInfo *pButtonInfo = &buttonInfo[buttonId];
-      DEBUG_PRINTF("Pressing button of pin %u\n", pButtonInfo->pin);
+      //DEBUG_PRINTF("Pressing button of pin %u\n", pButtonInfo->pin);
       logHistory("Press " + String(buttonId));
       pButtonInfo->pressed = 1;
-      digitalWrite(pButtonInfo->pin, 0);
+      uint8_t output_level = (pButtonInfo->monitor) ? 0 : 1;
+      digitalWrite(pButtonInfo->pin, output_level);
       pinMode(pButtonInfo->pin, OUTPUT);
-      digitalWrite(pButtonInfo->pin, 0);
+      digitalWrite(pButtonInfo->pin, output_level);
       pButtonInfo->duration = duration;
       pButtonInfo->time_pressed = millis();
       buttonsHeld = 1;
@@ -258,6 +287,7 @@ class KettleUsermod : public Usermod {
 
     void addToJsonInfo(JsonObject& root)
     {
+      THREADSAFE_ENTER;
       JsonObject usermod = root[FPSTR(_name)];
       if (usermod.isNull())
       {
@@ -265,6 +295,7 @@ class KettleUsermod : public Usermod {
       }
       usermod[FPSTR(_powerled)] = digitalRead(POWER_LED_PIN);
       usermod[FPSTR(_holdled)] = digitalRead(HOLD_LED_PIN);
+      usermod[FPSTR(_heating)] = digitalRead(HEATER_BUTTON_PIN);
       usermod[FPSTR(_currentstate)] = getStringFromState(currentState);
 #if ENABLE_MCP3201
       usermod[FPSTR(_voltage)] = voltage;
@@ -283,7 +314,7 @@ class KettleUsermod : public Usermod {
       else
       {
         length = HISTORY_LENGTH;
-        start = (nextHistoryEntry + HISTORY_LENGTH - 1) % HISTORY_LENGTH;
+        start = nextHistoryEntry % HISTORY_LENGTH;
       }
       for (unsigned int offset = 0; offset < length; offset++)
       {
@@ -295,7 +326,7 @@ class KettleUsermod : public Usermod {
       int buttons = 0;
       for (int i = 0; i < NUM_BUTTONS; i++)
       {
-        if (buttonInfo[i].pressed == 0)
+        if ((buttonInfo[i].pressed == 0) && buttonInfo[i].monitor)
         {
           if (digitalRead(buttonInfo[i].pin))
           {
@@ -305,6 +336,7 @@ class KettleUsermod : public Usermod {
       }
       usermod[FPSTR(_buttoninfo)] = buttons;
 #endif // ENABLE_HISTORY
+      THREADSAFE_EXIT;
     }
 
     unsigned int getTemperatureDelay(int change)
@@ -321,8 +353,18 @@ class KettleUsermod : public Usermod {
       buttonInfo[BOIL_BUTTON].pin = BOIL_BUTTON_PIN;
       buttonInfo[PLUS_BUTTON].pin = PLUS_BUTTON_PIN;
       buttonInfo[MINUS_BUTTON].pin = MINUS_BUTTON_PIN;
+      buttonInfo[PRESET_BUTTON].pin = PRESET_BUTTON_PIN;
+      buttonInfo[HEATER_BUTTON].pin = HEATER_BUTTON_PIN;
       for (int i = 0; i < NUM_BUTTONS; i++) {
         buttonInfo[i].pressed = 0;
+        buttonInfo[i].interruptInfo.pKettle = this;
+        buttonInfo[i].interruptInfo.buttonNum = i;
+        buttonInfo[i].interruptInfo.attached = 1;
+        buttonInfo[i].index = i;
+        buttonInfo[i].monitor = (i == HEATER_BUTTON) ? 0 : 1;
+        if (buttonInfo[i].monitor) {
+          attachInterruptArg(buttonInfo[i].pin, interruptHandler, &buttonInfo[i], RISING);
+        }
       }
       pinMode(POWER_LED_PIN, INPUT);
       pinMode(HOLD_LED_PIN, INPUT);
@@ -338,6 +380,7 @@ class KettleUsermod : public Usermod {
       initHistory();
 #endif //ENABLE_HISTORY
 
+
       initDone = true;
     }
 
@@ -346,12 +389,15 @@ class KettleUsermod : public Usermod {
       if (newState == currentState)
         return;
 
+      // Always release buttons at state transitions
+      updatePressed(millis(), true);
+
       // Certain transitions might be tricky. Cover those bases.
-      if (currentState == STATE_7_ESTABLISH_KNOWN_TEMPERATURE && (newState != STATE_8_LOWER_TEMP_TO_DESIRED))
+      if (currentState == S_6_ESTAB && (newState != S_7_ADJ))
       {
         currentSetTemperature = 0;
       }
-      if (currentState == STATE_8_LOWER_TEMP_TO_DESIRED && (newState != STATE_9_ENACT_HOLD))
+      if (currentState == S_7_ADJ && (newState != S_8_HOLD))
       {
         currentSetTemperature = 0;
       }
@@ -371,66 +417,86 @@ class KettleUsermod : public Usermod {
       uint8_t powerled = digitalRead(POWER_LED_PIN);
       uint8_t holdled = digitalRead(HOLD_LED_PIN);
 
-      if (currentState == STATE_TURNOFF)
+      if (currentState == S_TURNOFF)
       {
-        if (!powerled)
+        if (!powerled && !holdled)
         {
-          setNewState(STATE_IDLE, "");
+          setNewState(S_IDLE, "");
+        }
+        else if ((timeNow - timeStateEntered) > 20000)
+        {
+          setNewState(S_IDLE, "failed to turn off");
+        }
+        else if (holdled)
+        {
+          pressButton(HOLD_BUTTON, 100);
         }
         else
         {
           pressButton(POWER_BUTTON, 100);
         }
       }
-      else if (currentState == STATE_1_ENSURE_OFF)
+      else if (currentState == S_1_OFF)
       {
-        if (!powerled)
+        if (!powerled && !holdled)
         {
-          setNewState(STATE_2_TURN_ON, "");
+          setNewState(S_2_ON, "");
+        }
+        else if ((timeNow - timeStateEntered) > 20000)
+        {
+          setNewState(S_IDLE, "failed to turn off");
+        }
+        else if (holdled)
+        {
+          pressButton(HOLD_BUTTON, 100);
         }
         else
         {
           pressButton(POWER_BUTTON, 100);
         }
       }
-      else if (currentState == STATE_2_TURN_ON)
+      else if (currentState == S_2_ON)
       {
         if (powerled)
         {
-          setNewState(STATE_4_WAIT_FOR_BOIL, "");
+          setNewState(S_3_WAIT, "");
+        }
+        else if ((timeNow - timeStateEntered) > 20000)
+        {
+          setNewState(S_IDLE, "failed to turn on");
         }
         else
         {
           pressButton(POWER_BUTTON, 100);
         }
       }
-      else if (currentState == STATE_4_WAIT_FOR_BOIL)
+      else if (currentState == S_3_WAIT)
       {
         if (!powerled)
         {
-          setNewState(STATE_5_ENSURE_OFF, "Power finished");
+          setNewState(S_4_OFF, "Power finished");
         }
         else if ((temperature / 10) >= goalSetTemperature)
         {
-          setNewState(STATE_5_ENSURE_OFF, "Temperature reached");
+          setNewState(S_4_OFF, "Temp reached");
         }
       }
-      else if (currentState == STATE_5_ENSURE_OFF)
+      else if (currentState == S_4_OFF)
       {
         if (!powerled)
         {
-          setNewState(STATE_6_TURN_ON, "");
+          setNewState(S_5_ON, "");
         }
         else
         {
           pressButton(POWER_BUTTON, 100);
         }
       }
-      else if (currentState == STATE_6_TURN_ON)
+      else if (currentState == S_5_ON)
       {
         if (powerled)
         {
-          setNewState(STATE_7_ESTABLISH_KNOWN_TEMPERATURE, "");
+          setNewState(S_6_ESTAB, "");
           plannedSetTemperature = 0;
         }
         else
@@ -438,7 +504,7 @@ class KettleUsermod : public Usermod {
           pressButton(POWER_BUTTON, 100);
         }
       }
-      else if (currentState == STATE_7_ESTABLISH_KNOWN_TEMPERATURE)
+      else if (currentState == S_6_ESTAB)
       {
         if (plannedSetTemperature != 0)
         {
@@ -448,7 +514,7 @@ class KettleUsermod : public Usermod {
         }
         if (currentSetTemperature != 0)
         {
-          setNewState(STATE_8_LOWER_TEMP_TO_DESIRED, "");
+          setNewState(S_7_ADJ, "");
         }
         else if (goalSetTemperature >= ((208 + 140) / 2))
         {
@@ -461,7 +527,7 @@ class KettleUsermod : public Usermod {
           pressButton(MINUS_BUTTON, 18000);
         }
       }
-      else if (currentState == STATE_8_LOWER_TEMP_TO_DESIRED)
+      else if (currentState == S_7_ADJ)
       {
         if (plannedSetTemperature != 0)
         {
@@ -471,7 +537,7 @@ class KettleUsermod : public Usermod {
         }
         if (currentSetTemperature == goalSetTemperature)
         {
-          setNewState(STATE_9_ENACT_HOLD, "");
+          setNewState(S_8_HOLD, "");
         }
         else if (currentSetTemperature > goalSetTemperature)
         {
@@ -484,11 +550,11 @@ class KettleUsermod : public Usermod {
           plannedSetTemperature = goalSetTemperature;
         }
       }
-      else if (currentState == STATE_9_ENACT_HOLD)
+      else if (currentState == S_8_HOLD)
       {
         if (desiredHoldTime == 0)
         {
-          setNewState(STATE_IDLE, "No hold");
+          setNewState(S_IDLE, "No hold");
         }
         else if ((timeNow - timeStateEntered) < 2000)
         {
@@ -500,7 +566,7 @@ class KettleUsermod : public Usermod {
           // If we just want the generic hold, we don't have to wait.
           if ((desiredHoldTime == 0) || !powerled)
           {
-            setNewState(STATE_10_MAINTAIN_HOLD, "");
+            setNewState(S_9_MAINTAIN, "");
           }
         }
         else
@@ -508,28 +574,28 @@ class KettleUsermod : public Usermod {
           pressButton(HOLD_BUTTON, 100);
         }
       }
-      else if (currentState == STATE_10_MAINTAIN_HOLD)
+      else if (currentState == S_9_MAINTAIN)
       {
         if (!holdled)
         {
           // Hold LED turned off?
-          setNewState(STATE_IDLE, "Hold LED disappeared");
+          setNewState(S_IDLE, "Hold LED disappeared");
         }
         else if (desiredHoldTime == 1)
         {
           //Do nothing
-          setNewState(STATE_IDLE, "No hold duration specified");
+          setNewState(S_IDLE, "No hold duration specified");
         }
         else if ((timeNow - timeStateEntered) / 1000 >= desiredHoldTime)
         {
-          setNewState(STATE_11_TURN_HOLD_OFF, "Duration over");
+          setNewState(S_10_OFF, "Duration over");
         }
       }
-      else if (currentState == STATE_11_TURN_HOLD_OFF)
+      else if (currentState == S_10_OFF)
       {
         if (!holdled)
         {
-          setNewState(STATE_IDLE,"");
+          setNewState(S_IDLE,"");
         }
         else
         {
@@ -547,11 +613,50 @@ class KettleUsermod : public Usermod {
       //Serial.println("Connected to WiFi!");
     }
 
+String currentlyPrinting;
+unsigned int currentlyPrintingOffset;
+    void doHistoryToSerial()
+    {
+#ifdef WLED_DEBUG
+      int availableForWrite = DEBUGOUT.availableForWrite();
+#if ENABLE_HISTORY
+      while (availableForWrite > 100) {
+        if (currentlyPrintingOffset < currentlyPrinting.length()) {
+          DEBUGOUT.write(currentlyPrinting.charAt(currentlyPrintingOffset++));
+          availableForWrite--;
+          continue;
+        }
+        if ((consumedHistoryEntries + HISTORY_LENGTH) < numHistoryEntries) {
+          consumedHistoryEntries = numHistoryEntries - HISTORY_LENGTH;
+          continue;
+        }
+        else if (consumedHistoryEntries < numHistoryEntries) {
+          currentlyPrinting = history[consumedHistoryEntries % HISTORY_LENGTH] + "\n";
+          currentlyPrintingOffset = 0;
+          //DEBUG_PRINTLN(history[consumedHistoryEntries % HISTORY_LENGTH]);
+          consumedHistoryEntries++;
+          continue;
+        } else {
+          break;
+        }
+      }
+#endif // ENABLE_HISTORY
+#endif //ifdef WLED_DEBUG
+    }
+
+    unsigned int maxUartSpace = 0;
     void loop() {
       if (strip.isUpdating()) {
         return;
       }
 
+      unsigned int uartSpace = DEBUGOUT.availableForWrite();
+      if (uartSpace > maxUartSpace) {
+        DEBUG_PRINT("Max uart ="); DEBUG_PRINTLN(uartSpace);
+        maxUartSpace = uartSpace;
+      }
+
+      THREADSAFE_ENTER;
       unsigned long timeNow = millis();
 
 #if ENABLE_MCP3201
@@ -568,7 +673,7 @@ class KettleUsermod : public Usermod {
       // If the kettle is missing, cease all operation
       if (!kettlePresent)
       {
-        setNewState(STATE_IDLE, "Kettle missing");
+        setNewState(S_IDLE, "Kettle missing");
         releaseAll = true;
       }
 
@@ -582,13 +687,12 @@ class KettleUsermod : public Usermod {
         // Also, if we are not pressing buttons then we can run the state machine
         stateLogic(timeNow);
       }
-    }
+
+      doHistoryToSerial();
+    THREADSAFE_EXIT;
+  }
 
 #if ENABLE_HISTORY
-  String history[HISTORY_LENGTH];
-  unsigned long historyTimestamp[HISTORY_LENGTH];
-  unsigned int nextHistoryEntry = 0;
-  unsigned int numHistoryEntries = 0;
 
   void initHistory()
   {
@@ -603,6 +707,7 @@ class KettleUsermod : public Usermod {
     }
     nextHistoryEntry = 0;
     numHistoryEntries = 0;
+    consumedHistoryEntries = 0;
   }
 
 #if !HISTORY_STRINGS
@@ -631,15 +736,18 @@ class KettleUsermod : public Usermod {
 // stole from usermod_v2_klipper_percentage
   void addToJsonState(JsonObject &root)
   {
+    THREADSAFE_ENTER;
     JsonObject usermod = root[FPSTR(_name)];
     if (usermod.isNull())
     {
       usermod = root.createNestedObject(FPSTR(_name));
     }
     usermod[FPSTR(_enabled)] = 0;
+    THREADSAFE_EXIT;
   }
   void readFromJsonState(JsonObject &root)
   {
+    THREADSAFE_ENTER;
     JsonObject usermod = root[FPSTR(_name)];
     if (!usermod.isNull())
     {
@@ -664,14 +772,30 @@ class KettleUsermod : public Usermod {
           if (usermod[FPSTR(_temperature)].is<unsigned int>())
             goalSetTemperature = usermod[FPSTR(_temperature)].as<unsigned int>();
           String message = "Starting: temp=" + String(goalSetTemperature) + " hold=" + String(desiredHoldTime);
-          setNewState(STATE_1_ENSURE_OFF, message);
+          setNewState(S_1_OFF, message);
         }
         else
         {
-          setNewState(STATE_TURNOFF, "turning off");
+          setNewState(S_TURNOFF, "turning off");
+        }
+      }
+      else if (usermod[FPSTR(_press)].is<unsigned int>())
+      {
+        unsigned int buttonId = usermod[FPSTR(_press)].as<unsigned int>();
+        if (buttonId < NUM_BUTTONS)
+        {
+          unsigned int duration = 100;
+          if (usermod[FPSTR("duration")].is<unsigned int>())
+          {
+            duration = usermod[FPSTR("duration")].as<unsigned int>();
+          }
+          pressButton(buttonId, duration);
+        } else {
+          *((int *)0) = 1;
         }
       }
     }
+    THREADSAFE_EXIT;
   }
 
   void checkButtonPresses(unsigned long timeNow)
@@ -682,22 +806,35 @@ class KettleUsermod : public Usermod {
     // If that timer runs out, the button is pressed
     for (int i = 0; i < NUM_BUTTONS; i++)
     {
+      ButtonInfo *pButtonInfo = &buttonInfo[i];
       // Only check the buttons that we are not pressing in software
-      if (!buttonInfo[i].pressed)
+      if (!pButtonInfo->pressed && pButtonInfo->monitor)
       {
         // If we see the digital signal high, the button is unpressed, so refresh the timer
-        if (digitalRead(buttonInfo[i].pin))
+        if (pButtonInfo->interruptInfo.interrupt_seen || digitalRead(pButtonInfo->pin))
         {
-          buttonInfo[i].lastSeenUnpressed = timeNow;
+          pButtonInfo->interruptInfo.interrupt_seen = 0;
+          pButtonInfo->lastSeenUnpressed = timeNow;
           buttons |= (1 << i);
         }
         else
         {
-          if ((timeNow - buttonInfo[i].lastSeenUnpressed) > 50)
+          if ((timeNow - pButtonInfo->lastSeenUnpressed) > 50)
           {
             // Timer ran out - we have a user button press
             userPressedButton(i);
-            buttonInfo[i].lastSeenUnpressed = timeNow;
+            pButtonInfo->lastSeenUnpressed = timeNow;
+          }
+          else if ((timeNow - pButtonInfo->lastSeenUnpressed) > 10)
+          {
+            // Let's start checking on it with an interrupt
+            if (!pButtonInfo->interruptInfo.attached)
+            {
+              pButtonInfo->lastSeenUnpressed = timeNow - 10;
+              pButtonInfo->interruptInfo.attached = 1;
+              attachInterruptArg(pButtonInfo->pin, interruptHandler, &buttonInfo[i], RISING);
+              //logHistory("Interrupt on " + String(i));
+            }
           }
         }
       }
@@ -709,21 +846,43 @@ class KettleUsermod : public Usermod {
 
   void userPressedButton(int button)
   {
-    switch(button)
+    if ((button == PLUS_BUTTON) || (button == MINUS_BUTTON) || (button == PRESET_BUTTON))
     {
-      default:
-        // If the user interacts, then we stop what we're doing
-        // Also, forget the known set temperature because that might get adjusted
-        if ((currentState != STATE_IDLE) || (currentSetTemperature != 0))
-        {
-          logHistory("Resetting state because of button " + String(button));
-        }
+      if (currentSetTemperature != 0)
+      {
+        logHistory("Resetting known temp because of button " + String(button));
         currentSetTemperature = 0;
-        setNewState(STATE_IDLE, "button " + String(button));
-        break;
+      }
+    }
+    // If the user interacts, then we stop what we're doing
+    // Also, forget the known set temperature because that might get adjusted
+    if (currentState != S_IDLE)
+    {
+      logHistory("Resetting state because of button " + String(button));
+      setNewState(S_IDLE, "button " + String(button));
     }
   }
+
+  //void buttonIsUnpressed(unsigned int buttonNum)
+  //{
+  //  THREADSAFE_ENTER;
+  //  if (buttonNum >= NUM_BUTTONS) return;
+  //  //logHistory("Interrupt off " + String(buttonNum));
+  //  buttonInfo[buttonNum].lastSeenUnpressed = millis();
+  //  detachInterrupt(buttonInfo[buttonNum].pin);
+  //  buttonInfo[buttonNum].interruptInfo.attached = 0;
+  //  THREADSAFE_EXIT;
+  //}
 };
+
+void interruptHandler(void *pVoid)
+{
+  ButtonInfo *pButtonInfo = (ButtonInfo *)pVoid;
+  pButtonInfo->interruptInfo.interrupt_seen = 1;
+  detachInterrupt(pButtonInfo->pin);
+  pButtonInfo->interruptInfo.attached = 0;
+  //pButtonInfo->interruptInfo.pKettle->logHistory("Interrupt off " + String(pButtonInfo->index));
+}
 
 const char KettleUsermod::_name[]           PROGMEM = "Kettle";
 const char KettleUsermod::_enabled[]        PROGMEM = "enabled";
@@ -737,5 +896,7 @@ const char KettleUsermod::_currentstate[]        PROGMEM = "currentstate";
 const char KettleUsermod::_buttoninfo[]        PROGMEM = "buttoninfo";
 const char KettleUsermod::_plus[]        PROGMEM = "plus";
 const char KettleUsermod::_minus[]        PROGMEM = "minus";
+const char KettleUsermod::_press[]        PROGMEM = "press";
+const char KettleUsermod::_heating[]        PROGMEM = "heating";
 const uint16_t KettleUsermod::voltages[NUM_TEMPS] =     {1663, 1985, 2185, 2334, 2539, 2701, 2800, 3106, 3211, 3331, 3459,3728, 3833, 3895, 3922, 3968};
 const uint16_t KettleUsermod::temperatures[NUM_TEMPS] = {2080, 1920, 1810, 1740, 1630, 1540, 1490, 1290, 1240, 1130, 1040, 770,  600,  520,  460,  320};
