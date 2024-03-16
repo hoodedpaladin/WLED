@@ -99,7 +99,7 @@ button {
 
 #namelabel {
 	position: fixed;
-	bottom: calc(var(--bh) + 6px);
+	bottom: 6px;
 	right: 6px;
 	color: var(--c-8); /* set bright (--c-d) with dark text shadow (see below) to be legible on gray background (in image) */
 	cursor: pointer;
@@ -282,6 +282,7 @@ button {
 	left: 0;
 	width: 100%;
 	background-color: var(--c-tb);
+	visibility:collapse;
 }
 
 .tab button {
@@ -593,7 +594,7 @@ button {
 
 #connind {
 	position: fixed;
-	bottom: calc(var(--bh) + 5px);
+	bottom: 5px;
 	left: 4px;
 	padding: 5px;
 	border-radius: 5px;
@@ -1578,4 +1579,10 @@ TD .checkmark, TD .radiomark {
 		text-overflow: ellipsis;
 		overflow-x: clip;
 	}
+}
+
+#maininfo table {
+	width:100%;
+	max-width:280px;
+	margin:auto;
 }

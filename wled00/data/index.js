@@ -261,6 +261,7 @@ function onLoad()
 
 	// Load initial data
 	requestJson();// will load presets and create WS
+	setInterval(requestJson, 5000);
 	//loadPalettes(()=>{
 	//	// fill effect extra data array
 	//	loadFXData(()=>{
@@ -615,7 +616,7 @@ function parseInfo(i) {
 	syncTglRecv = i.str;
 	maxSeg      = i.leds.maxseg;
 	pmt         = i.fs.pmt;
-	gId('buttonNodes').style.display = lastinfo.ndc > 0 ? null:"none";
+	//gId('buttonNodes').style.display = lastinfo.ndc > 0 ? null:"none";
 	// do we have a matrix set-up
 	mw = i.leds.matrix ? i.leds.matrix.w : 0;
 	mh = i.leds.matrix ? i.leds.matrix.h : 0;
@@ -657,11 +658,7 @@ function populateInfo(i)
 	var cn="";
 	var heap = i.freeheap/1024;
 	heap = heap.toFixed(1);
-	var pwr = i.leds.pwr;
-	var pwru = "Not calculated";
 	var temperature = i.Kettle.temperature / 10;
-	if (pwr > 1000) {pwr /= 1000; pwr = pwr.toFixed((pwr > 10) ? 0 : 1); pwru = pwr + " A";}
-	else if (pwr > 0) {pwr = 50 * Math.round(pwr/50); pwru = pwr + " mA";}
 	var urows="";
 	if (i.u) {
 		for (const [k, val] of Object.entries(i.u)) {
@@ -671,10 +668,6 @@ function populateInfo(i)
 				urows += inforow(k,val);
 		}
 	}
-	var vcn = "Kuuhaku";
-	if (i.ver.startsWith("0.14.")) vcn = "Hoshi";
-//	if (i.ver.includes("-bl")) vcn = "Supāku";
-	if (i.cn) vcn = i.cn;
 
 	var statetext = "Off";
 	if (i.Kettle.powerled) statetext = "Boiling";
@@ -704,6 +697,25 @@ ${inforow("Environment",i.arch + " " + i.core + " (" + i.lwip + ")")}
 	for (let sd of (gId('kv').getElementsByClassName('sliderdisplay')||[])) {
 		let s = sd.previousElementSibling;
 		if (s) updateTrail(s);
+	}
+
+	cn = `<table>
+${inforow("Temperature", temperature)}
+${inforow("State", statetext)}
+${inforow("Kettle Present", i.Kettle.kettlepresent)}
+${inforow("Current State", i.Kettle.currentstate)}
+</table>`;
+    gId('maininfo').innerHTML = cn;
+
+	// Update header
+	var newtitle;
+	if (!i.Kettle.kettlepresent) {
+		newtitle = "Kettle Gone";
+	} else {
+		newtitle = statetext + " " + temperature.toString();
+	}
+	if (document.title != newtitle) {
+		document.title = newtitle;
 	}
 }
 
@@ -1336,7 +1348,8 @@ function makeWS() {
 		var i = json.info;
 		if (i) {
 			parseInfo(i);
-			if (isInfo) populateInfo(i);
+			//if (isInfo) populateInfo(i);
+			populateInfo(i);
 		} else
 			i = lastinfo;
 		var s = json.state ? json.state : json;
@@ -1527,7 +1540,7 @@ function toggleNodes()
 	isNodes = !isNodes;
 	if (isNodes) loadNodes();
 	gId('nodes').style.transform = (isNodes) ? "translateY(0px)":"translateY(100%)";
-	gId('buttonNodes').className = (isNodes) ? "active":"";
+	//gId('buttonNodes').className = (isNodes) ? "active":"";
 }
 
 function makeSeg()
@@ -2674,7 +2687,7 @@ function togglePcMode(fromB = false)
 	if (!fromB && ((wW < 1024 && lastw < 1024) || (wW >= 1024 && lastw >= 1024))) return; // no change in size and called from size()
 	openTab(0, true);
 	updateTablinks(0);
-	gId('buttonPcm').className = (pcMode) ? "active":"";
+	//gId('buttonPcm').className = (pcMode) ? "active":"";
 	gId('bot').style.height = (pcMode && !cfg.comp.pcmbot) ? "0":"auto";
 	sCol('--bh', gId('bot').clientHeight + "px");
 	_C.style.width = (pcMode)?'100%':'400%';
