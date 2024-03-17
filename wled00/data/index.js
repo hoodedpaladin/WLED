@@ -681,6 +681,7 @@ ${inforow("Temperature", temperature)}
 ${inforow("State", statetext)}
 ${inforow("Kettle Present", i.Kettle.kettlepresent)}
 ${inforow("Current State", i.Kettle.currentstate)}
+${i.Kettle.fill_estimate >= 0 ? inforow("Estimated Water Level", "" + i.Kettle.fill_estimate/10 + "%") : ""}
 ${inforow("Voltage", i.Kettle.voltage)}
 ${inforow("Build",i.vid)}
 ${inforow("Signal strength",i.wifi.signal +"% ("+ i.wifi.rssi, " dBm)")}
@@ -704,6 +705,7 @@ ${inforow("Temperature", temperature)}
 ${inforow("State", statetext)}
 ${inforow("Kettle Present", i.Kettle.kettlepresent)}
 ${inforow("Current State", i.Kettle.currentstate)}
+${i.Kettle.fill_estimate >= 0 ? inforow("Estimated Water Level", "" + i.Kettle.fill_estimate/10 + "%") : ""}
 </table>`;
     gId('maininfo').innerHTML = cn;
 

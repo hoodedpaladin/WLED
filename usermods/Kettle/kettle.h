@@ -26,14 +26,18 @@
 #define ENABLE_MCP3201 (1)
 #define DISABLE_HOLD (0)
 
-#define NUM_BUTTONS  (7)
+#define USE_HEATER_BUTTON (0)
+
+#define NUM_BUTTONS  (6 + USE_HEATER_BUTTON)
 #define POWER_BUTTON (0)
 #define HOLD_BUTTON  (1)
 #define MINUS_BUTTON (2)
 #define PLUS_BUTTON  (3)
 #define BOIL_BUTTON  (4)
 #define PRESET_BUTTON (5)
+#if USE_HEATER_BUTTON
 #define HEATER_BUTTON (6)
+#endif
 
 #define POWER_LED_PIN    (6)
 #define POWER_BUTTON_PIN (7)
@@ -144,6 +148,7 @@ class KettleUsermod : public Usermod {
     unsigned long voltageLastRead = 0;
     uint16_t voltage;
     uint16_t temperature;
+    bool kettlePresent = 0;
 #endif //ENABLE_MCP3201
     //buttonsHeld is true while we are holding a button and for 500ms after. It slows down the state machine so we press buttons slowly.
     bool buttonsHeld = 0;
@@ -154,6 +159,13 @@ class KettleUsermod : public Usermod {
     uint16_t plannedSetTemperature = 0;
     uint16_t goalSetTemperature = 0;
     uint32_t desiredHoldTime = 0;
+
+    // Keep track of temperature history
+    #define TEMPERATURE_HISTORY_LEN (20)
+    unsigned long lastTimeNotHeating = 0;
+    unsigned long lastTimeTemperatureLogged = 0;
+    uint16_t temperature_history[TEMPERATURE_HISTORY_LEN];
+    int fill_estimate = -1;
 
     SPIClass spiPort;
     static const char _name[];
@@ -170,6 +182,7 @@ class KettleUsermod : public Usermod {
     static const char _minus[];
     static const char _press[];
     static const char _heating[];
+    static const char _fill_estimate[];
     static const uint16_t voltages[];
     static const uint16_t temperatures[];
 
@@ -335,6 +348,12 @@ class KettleUsermod : public Usermod {
         }
       }
       usermod[FPSTR(_buttoninfo)] = buttons;
+      if (fill_estimate > 0) {
+        // Round down to 50 mL
+        usermod[FPSTR(_fill_estimate)] = fill_estimate - (fill_estimate % 50);
+      } else {
+        usermod[FPSTR(_fill_estimate)] = fill_estimate;
+      }
 #endif // ENABLE_HISTORY
       THREADSAFE_EXIT;
     }
@@ -354,20 +373,29 @@ class KettleUsermod : public Usermod {
       buttonInfo[PLUS_BUTTON].pin = PLUS_BUTTON_PIN;
       buttonInfo[MINUS_BUTTON].pin = MINUS_BUTTON_PIN;
       buttonInfo[PRESET_BUTTON].pin = PRESET_BUTTON_PIN;
+#if USE_HEATER_BUTTON
       buttonInfo[HEATER_BUTTON].pin = HEATER_BUTTON_PIN;
+#endif //USE_HEATER_BUTTON
       for (int i = 0; i < NUM_BUTTONS; i++) {
         buttonInfo[i].pressed = 0;
         buttonInfo[i].interruptInfo.pKettle = this;
         buttonInfo[i].interruptInfo.buttonNum = i;
         buttonInfo[i].interruptInfo.attached = 1;
         buttonInfo[i].index = i;
+#if USE_HEATER_BUTTON
         buttonInfo[i].monitor = (i == HEATER_BUTTON) ? 0 : 1;
+#else
+        buttonInfo[i].monitor = 1;
+#endif // USE_HEATER_BUTTON
         if (buttonInfo[i].monitor) {
           attachInterruptArg(buttonInfo[i].pin, interruptHandler, &buttonInfo[i], RISING);
         }
       }
       pinMode(POWER_LED_PIN, INPUT);
       pinMode(HOLD_LED_PIN, INPUT);
+#if !USE_HEATOR_BUTTON
+      pinMode(HEATER_BUTTON_PIN, INPUT);
+#endif
       updatePressed(millis(), true);
 
 
@@ -687,6 +715,11 @@ unsigned int currentlyPrintingOffset;
         // Also, if we are not pressing buttons then we can run the state machine
         stateLogic(timeNow);
       }
+      THREADSAFE_EXIT;
+
+      THREADSAFE_ENTER;
+      temperatureTracking(timeNow);
+      THREADSAFE_EXIT;
 
       doHistoryToSerial();
     THREADSAFE_EXIT;
@@ -873,6 +906,76 @@ unsigned int currentlyPrintingOffset;
   //  buttonInfo[buttonNum].interruptInfo.attached = 0;
   //  THREADSAFE_EXIT;
   //}
+
+  // Estimate that we add 3746 degrees F per mL per 10 seconds
+  void makeCapacityEstimate(unsigned int ago) {
+    if (ago >= TEMPERATURE_HISTORY_LEN) {
+      ago = TEMPERATURE_HISTORY_LEN - 1;
+    }
+
+    unsigned int difference = temperature_history[0] - temperature_history[ago];
+    if (difference > 2500) {
+      fill_estimate = -1;
+      return;
+    }
+
+    unsigned int capacity = (37460 * ago) / difference;
+    logHistory("Estimate: " + String(capacity) + " from " + String(ago) + "0 ago difference " + String(difference));
+
+    if (capacity > 1500) {
+      fill_estimate = -1;
+      return;
+    }
+    difference = (fill_estimate > capacity) ? (fill_estimate - capacity) : (capacity - fill_estimate);
+    if (difference > 50) {
+      fill_estimate = capacity;
+    }
+  }
+
+  void temperatureTracking(unsigned long timeNow) {
+    // Check for constant duration of heating
+#if !USE_HEATER_BUTTON
+    if (!kettlePresent) {
+      fill_estimate = -1;
+    }
+
+    if (!kettlePresent || !digitalRead(HEATER_BUTTON_PIN)) {
+      if ((timeNow - lastTimeNotHeating) >= 10000) {
+        logHistory("Stopped heating after " + String(timeNow - lastTimeNotHeating));
+      }
+      lastTimeNotHeating = timeNow;
+    }
+
+    // Log temperature always
+    if ((timeNow - lastTimeTemperatureLogged) >= 10000) {
+      lastTimeTemperatureLogged = timeNow;
+      for (int i = TEMPERATURE_HISTORY_LEN - 1; i > 0; i--) {
+        temperature_history[i] = temperature_history[i-1];
+      }
+      temperature_history[0] = temperature;
+
+      // If the temperature has gone down, someone added water
+      if ((temperature_history[1] > temperature_history[0]) && ((temperature_history[1] - temperature_history[0]) > 50)) {
+        fill_estimate = -1;
+        lastTimeNotHeating = timeNow;
+      }
+
+      //if ((timeNow - lastTimeNotHeating) >= 60000) {
+      //  logHistory("Heat: " + String(temperature_history[5]) + "->" + String(temperature_history[0]));
+      //}
+      if ((timeNow - lastTimeNotHeating) >= 20000) {
+        unsigned long ago = (timeNow - lastTimeNotHeating - 20000) / 10000;
+        if (ago < 1) {
+          // 10 seconds less estimate time @ 20 seconds
+          // Just for a quicker estimate
+          ago = 1;
+        }
+
+        makeCapacityEstimate(ago);
+      }
+    }
+#endif //!USE_HEATER_BUTTON
+  }
 };
 
 void interruptHandler(void *pVoid)
@@ -898,5 +1001,6 @@ const char KettleUsermod::_plus[]        PROGMEM = "plus";
 const char KettleUsermod::_minus[]        PROGMEM = "minus";
 const char KettleUsermod::_press[]        PROGMEM = "press";
 const char KettleUsermod::_heating[]        PROGMEM = "heating";
+const char KettleUsermod::_fill_estimate[]        PROGMEM = "fill_estimate";
 const uint16_t KettleUsermod::voltages[NUM_TEMPS] =     {1663, 1985, 2185, 2334, 2539, 2701, 2800, 3106, 3211, 3331, 3459,3728, 3833, 3895, 3922, 3968};
 const uint16_t KettleUsermod::temperatures[NUM_TEMPS] = {2080, 1920, 1810, 1740, 1630, 1540, 1490, 1290, 1240, 1130, 1040, 770,  600,  520,  460,  320};
