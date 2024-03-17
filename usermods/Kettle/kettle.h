@@ -322,7 +322,7 @@ class KettleUsermod : public Usermod {
       usermod[FPSTR(_currentstate)] = current_command;
 #if ENABLE_MCP3201
       usermod[FPSTR(_voltage)] = voltage;
-      usermod[FPSTR(_kettlepresent)] = voltage < 4070;
+      usermod[FPSTR(_kettlepresent)] = voltage < 4000;
       usermod[FPSTR(_temperature)] = temperature;
 #endif //ENABLE_MCP3201
 
@@ -728,7 +728,7 @@ unsigned int currentlyPrintingOffset;
       uint16_t voltage = 3000;
 #endif //ENABLE_MCP3201
       THREADSAFE_EXIT;
-      bool kettlePresent = voltage <= 4070;
+      kettlePresent = voltage <= 4000;
       bool releaseAll = false;
 
       // If the kettle is missing, cease all operation
