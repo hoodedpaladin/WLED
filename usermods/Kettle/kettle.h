@@ -83,6 +83,7 @@ enum KettleState {
   S_8_HOLD,
   S_9_MAINTAIN,
   S_10_OFF,
+  S_11_WAIT,
 };
 
 String getStringFromState(KettleState state)
@@ -113,6 +114,8 @@ String getStringFromState(KettleState state)
       return "S_9_MAINTAIN";
     case S_10_OFF:
       return "S_10_OFF";
+    case S_11_WAIT:
+      return "S_11_WAIT";
     default:
       return "unknown state";
   }
@@ -163,6 +166,8 @@ class KettleUsermod : public Usermod {
     uint16_t plannedSetTemperature = 0;
     uint16_t goalSetTemperature = 0;
     uint32_t desiredHoldTime = 0;
+    uint32_t desiredWaitTime = 0;
+    String current_command = "";
 
     // Keep track of temperature history
     #define TEMPERATURE_HISTORY_LEN (20)
@@ -187,6 +192,7 @@ class KettleUsermod : public Usermod {
     static const char _press[];
     static const char _heating[];
     static const char _fill_estimate[];
+    static const char _wait[];
     static const char _timestamps[];
     static const uint16_t voltages[];
     static const uint16_t temperatures[];
@@ -313,7 +319,7 @@ class KettleUsermod : public Usermod {
       usermod[FPSTR(_powerled)] = digitalRead(POWER_LED_PIN);
       usermod[FPSTR(_holdled)] = digitalRead(HOLD_LED_PIN);
       usermod[FPSTR(_heating)] = digitalRead(HEATER_BUTTON_PIN);
-      usermod[FPSTR(_currentstate)] = getStringFromState(currentState);
+      usermod[FPSTR(_currentstate)] = current_command;
 #if ENABLE_MCP3201
       usermod[FPSTR(_voltage)] = voltage;
       usermod[FPSTR(_kettlepresent)] = voltage < 4070;
@@ -424,6 +430,10 @@ class KettleUsermod : public Usermod {
 
     void setNewState(KettleState newState, String reason)
     {
+      if (newState == S_IDLE) {
+        // Clear the user command now
+        current_command = "";
+      }
       if (newState == currentState)
         return;
 
@@ -640,6 +650,14 @@ class KettleUsermod : public Usermod {
           pressButton(HOLD_BUTTON, 100);
         }
       }
+      else if (currentState == S_11_WAIT)
+      {
+        unsigned long alreadyWaited = (timeNow - timeStateEntered) / 1000;
+        makeCurrentCommand(alreadyWaited);
+        if (alreadyWaited >= desiredWaitTime) {
+          setNewState(S_1_OFF, "");
+        }
+      }
     }
 
 
@@ -714,7 +732,7 @@ unsigned int currentlyPrintingOffset;
       bool releaseAll = false;
 
       // If the kettle is missing, cease all operation
-      if (!kettlePresent)
+      if (!kettlePresent && currentState != S_11_WAIT)
       {
         setNewState(S_IDLE, "Kettle missing");
         releaseAll = true;
@@ -814,6 +832,7 @@ unsigned int currentlyPrintingOffset;
         {
           goalSetTemperature = 208;
           desiredHoldTime = 0;
+          desiredWaitTime = 0;
           if (usermod[FPSTR(_hold)].is<bool>())
           {
             if(usermod[FPSTR(_hold)].as<bool>())
@@ -827,8 +846,23 @@ unsigned int currentlyPrintingOffset;
           }
           if (usermod[FPSTR(_temperature)].is<unsigned int>())
             goalSetTemperature = usermod[FPSTR(_temperature)].as<unsigned int>();
-          String message = "Starting: temp=" + String(goalSetTemperature) + " hold=" + String(desiredHoldTime);
-          setNewState(S_1_OFF, message);
+          if (usermod[FPSTR(_wait)].is<unsigned int>())
+            desiredWaitTime = usermod[FPSTR(_wait)].as<unsigned int>();
+          String message = "Starting: temp=" + String(goalSetTemperature);
+          if (desiredHoldTime != 0) {
+            message += " hold=" + String(desiredHoldTime);
+          }
+          if (desiredWaitTime != 0) {
+            message += " wait=" + String(desiredWaitTime);
+          }
+
+          // Build current_command string for the UI
+          makeCurrentCommand(0);
+          if (desiredWaitTime == 0) {
+            setNewState(S_1_OFF, message);
+          } else {
+            setNewState(S_11_WAIT, message);
+          }
         }
         else
         {
@@ -1009,6 +1043,38 @@ unsigned int currentlyPrintingOffset;
     }
 #endif //!USE_HEATER_BUTTON
   }
+
+  void makeCurrentCommand(unsigned long already_waited) {
+    unsigned long waitTime = (desiredWaitTime > already_waited) ? desiredWaitTime - already_waited : 0;
+    String message;
+    if (waitTime != 0)
+    {
+      message = "Wait for ";
+      if (waitTime > 3600) {
+        message += String(waitTime / 3600) + " hours ";
+        waitTime = waitTime % 3600;
+      }
+      message += String(waitTime / 60);
+      uint32_t seconds = waitTime % 60;
+      if (seconds >= 6)
+      {
+        message += "." + String(seconds / 6);
+      }
+      message += " mins, then b";
+    }
+    else
+    {
+      message = "B";
+    }
+
+    message += "oil to " + String(goalSetTemperature);
+    if (desiredHoldTime > 0)
+    {
+      message += " and hold";
+    }
+
+    current_command = message;
+  }
 };
 
 void interruptHandler(void *pVoid)
@@ -1035,6 +1101,7 @@ const char KettleUsermod::_minus[]        PROGMEM = "minus";
 const char KettleUsermod::_press[]        PROGMEM = "press";
 const char KettleUsermod::_heating[]        PROGMEM = "heating";
 const char KettleUsermod::_fill_estimate[]        PROGMEM = "fill_estimate";
+const char KettleUsermod::_wait[]        PROGMEM = "wait";
 const char KettleUsermod::_timestamps[]        PROGMEM = "timestamps";
 const uint16_t KettleUsermod::voltages[NUM_TEMPS] =     {1663, 1985, 2185, 2334, 2539, 2701, 2800, 3106, 3211, 3331, 3459,3728, 3833, 3895, 3922, 3968};
 const uint16_t KettleUsermod::temperatures[NUM_TEMPS] = {2080, 1920, 1810, 1740, 1630, 1540, 1490, 1290, 1240, 1130, 1040, 770,  600,  520,  460,  320};

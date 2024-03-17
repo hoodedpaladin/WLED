@@ -680,7 +680,7 @@ ${i.opt&0x100?inforow("Debug","<button class=\"btn btn-xs\" onclick=\"requestJso
 ${inforow("Temperature", temperature)}
 ${inforow("State", statetext)}
 ${inforow("Kettle Present", i.Kettle.kettlepresent)}
-${inforow("Current State", i.Kettle.currentstate)}
+${i.Kettle.currentstate === "" ? "" : inforow("Command", i.Kettle.currentstate)}
 ${i.Kettle.fill_estimate >= 0 ? inforow("Estimated Water Level", "" + i.Kettle.fill_estimate/10 + "%") : ""}
 ${inforow("Voltage", i.Kettle.voltage)}
 ${inforow("Build",i.vid)}
@@ -704,7 +704,7 @@ ${inforow("Environment",i.arch + " " + i.core + " (" + i.lwip + ")")}
 ${inforow("Temperature", temperature)}
 ${inforow("State", statetext)}
 ${inforow("Kettle Present", i.Kettle.kettlepresent)}
-${inforow("Current State", i.Kettle.currentstate)}
+${i.Kettle.currentstate === "" ? "" : inforow("Command", i.Kettle.currentstate)}
 ${i.Kettle.fill_estimate >= 0 ? inforow("Estimated Water Level", "" + i.Kettle.fill_estimate/10 + "%") : ""}
 </table>`;
     gId('maininfo').innerHTML = cn;
