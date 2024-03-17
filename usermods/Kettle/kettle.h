@@ -62,6 +62,10 @@ unsigned int nextHistoryEntry = 0;
 unsigned int numHistoryEntries = 0;
 unsigned int consumedHistoryEntries;
 #endif //ENABLE_HISTORY
+#define TIMESTAMP_LENGTH (40)
+unsigned long timestamps[TIMESTAMP_LENGTH];
+unsigned int nextTimestamp = 0;
+unsigned long last_time;
 
 #define THREADSAFE_ENTER noInterrupts()
 #define THREADSAFE_EXIT interrupts()
@@ -183,6 +187,7 @@ class KettleUsermod : public Usermod {
     static const char _press[];
     static const char _heating[];
     static const char _fill_estimate[];
+    static const char _timestamps[];
     static const uint16_t voltages[];
     static const uint16_t temperatures[];
 
@@ -300,7 +305,6 @@ class KettleUsermod : public Usermod {
 
     void addToJsonInfo(JsonObject& root)
     {
-      THREADSAFE_ENTER;
       JsonObject usermod = root[FPSTR(_name)];
       if (usermod.isNull())
       {
@@ -319,6 +323,7 @@ class KettleUsermod : public Usermod {
 #if ENABLE_HISTORY
       JsonArray arr = usermod.createNestedArray(FPSTR("history"));
       unsigned int start,length;
+      THREADSAFE_ENTER;
       if (numHistoryEntries < HISTORY_LENGTH)
       {
         start = 0;
@@ -335,6 +340,12 @@ class KettleUsermod : public Usermod {
         arr.add(history[index]);
         arr.add(historyTimestamp[index]);
       }
+
+      arr = usermod.createNestedArray(FPSTR(_timestamps));
+      for (unsigned int i = 0; i < TIMESTAMP_LENGTH; i++) {
+        arr.add(timestamps[i]);
+      }
+      THREADSAFE_EXIT;
 
       int buttons = 0;
       for (int i = 0; i < NUM_BUTTONS; i++)
@@ -355,7 +366,6 @@ class KettleUsermod : public Usermod {
         usermod[FPSTR(_fill_estimate)] = fill_estimate;
       }
 #endif // ENABLE_HISTORY
-      THREADSAFE_EXIT;
     }
 
     unsigned int getTemperatureDelay(int change)
@@ -678,23 +688,28 @@ unsigned int currentlyPrintingOffset;
         return;
       }
 
-      unsigned int uartSpace = DEBUGOUT.availableForWrite();
-      if (uartSpace > maxUartSpace) {
-        DEBUG_PRINT("Max uart ="); DEBUG_PRINTLN(uartSpace);
-        maxUartSpace = uartSpace;
-      }
-
-      THREADSAFE_ENTER;
       unsigned long timeNow = millis();
+
+      // Debugging: what timestamps did we enter this loop at?
+      if ((timeNow - last_time) > 10) {
+        timestamps[nextTimestamp] = timeNow;
+        nextTimestamp = (nextTimestamp + 1) % TIMESTAMP_LENGTH;
+        timestamps[nextTimestamp] = (timeNow - last_time);
+        nextTimestamp = (nextTimestamp + 1) % TIMESTAMP_LENGTH;
+      }
+      last_time = timeNow;
 
 #if ENABLE_MCP3201
       if (timeNow - voltageLastRead >= 20)
       {
+        THREADSAFE_ENTER;
         updateVoltage();
+        THREADSAFE_ENTER;
       }
 #else
       uint16_t voltage = 3000;
 #endif //ENABLE_MCP3201
+      THREADSAFE_EXIT;
       bool kettlePresent = voltage <= 4070;
       bool releaseAll = false;
 
@@ -704,12 +719,19 @@ unsigned int currentlyPrintingOffset;
         setNewState(S_IDLE, "Kettle missing");
         releaseAll = true;
       }
+      THREADSAFE_EXIT;
 
       // Update the pressed buttons
+      THREADSAFE_ENTER;
       updatePressed(timeNow, releaseAll);
-      // Check for if the user is pressing unpressed buttons
-      checkButtonPresses(timeNow);
+      THREADSAFE_EXIT;
 
+      // Check for if the user is pressing unpressed buttons
+      THREADSAFE_ENTER;
+      checkButtonPresses(timeNow);
+      THREADSAFE_EXIT;
+
+      THREADSAFE_ENTER;
       if (!buttonsHeld)
       {
         // Also, if we are not pressing buttons then we can run the state machine
@@ -721,8 +743,9 @@ unsigned int currentlyPrintingOffset;
       temperatureTracking(timeNow);
       THREADSAFE_EXIT;
 
+      THREADSAFE_ENTER;
       doHistoryToSerial();
-    THREADSAFE_EXIT;
+      THREADSAFE_EXIT;
   }
 
 #if ENABLE_HISTORY
@@ -893,6 +916,16 @@ unsigned int currentlyPrintingOffset;
     {
       logHistory("Resetting state because of button " + String(button));
       setNewState(S_IDLE, "button " + String(button));
+
+      // log timestamps
+      for (int i = 0; i < TIMESTAMP_LENGTH; i += 10) {
+        String message = "";
+        for (int j = 0; (j < 10) && (i+j < TIMESTAMP_LENGTH); j++) {
+          message += String(timestamps[i+j]);
+          message += ",";
+        }
+        logHistory(message);
+      }
     }
   }
 
@@ -1002,5 +1035,6 @@ const char KettleUsermod::_minus[]        PROGMEM = "minus";
 const char KettleUsermod::_press[]        PROGMEM = "press";
 const char KettleUsermod::_heating[]        PROGMEM = "heating";
 const char KettleUsermod::_fill_estimate[]        PROGMEM = "fill_estimate";
+const char KettleUsermod::_timestamps[]        PROGMEM = "timestamps";
 const uint16_t KettleUsermod::voltages[NUM_TEMPS] =     {1663, 1985, 2185, 2334, 2539, 2701, 2800, 3106, 3211, 3331, 3459,3728, 3833, 3895, 3922, 3968};
 const uint16_t KettleUsermod::temperatures[NUM_TEMPS] = {2080, 1920, 1810, 1740, 1630, 1540, 1490, 1290, 1240, 1130, 1040, 770,  600,  520,  460,  320};
