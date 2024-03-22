@@ -138,7 +138,7 @@ struct ButtonInfo {
   uint8_t pressed;
   uint8_t index;
   uint8_t monitor;
-  unsigned long lastSeenUnpressed;
+  unsigned long timeUnpressed;
   InterruptInfo interruptInfo;
 };
 
@@ -962,6 +962,7 @@ unsigned int currentlyPrintingOffset;
       logHistory("Resetting state because of button " + String(button));
       setNewState(S_IDLE, "button " + String(button));
 
+#if 0
       // log timestamps
       for (int i = 0; i < TIMESTAMP_LENGTH; i += 10) {
         String message = "";
@@ -971,6 +972,7 @@ unsigned int currentlyPrintingOffset;
         }
         logHistory(message);
       }
+#endif
     }
   }
 
