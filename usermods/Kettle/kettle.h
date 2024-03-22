@@ -170,7 +170,7 @@ class KettleUsermod : public Usermod {
     String current_command = "";
 
     // Keep track of temperature history
-    #define TEMPERATURE_HISTORY_LEN (20)
+    #define TEMPERATURE_HISTORY_LEN (60)
     unsigned long lastTimeNotHeating = 0;
     unsigned long lastTimeTemperatureLogged = 0;
     uint16_t temperature_history[TEMPERATURE_HISTORY_LEN];
@@ -987,7 +987,8 @@ unsigned int currentlyPrintingOffset;
   //  THREADSAFE_EXIT;
   //}
 
-  // Estimate that we add 3746 degrees F per mL per 10 seconds
+  // Estimate that we add 37460 degrees F per mL per 10 seconds
+  // 18730 degrees F per mL per 5 seconds
   void makeCapacityEstimate(unsigned int ago) {
     if (ago >= TEMPERATURE_HISTORY_LEN) {
       ago = TEMPERATURE_HISTORY_LEN - 1;
@@ -999,8 +1000,8 @@ unsigned int currentlyPrintingOffset;
       return;
     }
 
-    unsigned int capacity = (37460 * ago) / difference;
-    logHistory("Estimate: " + String(capacity) + " from " + String(ago) + "0 ago difference " + String(difference));
+    unsigned int capacity = (18730 * ago) / difference;
+    logHistory("Estimate: " + String(capacity) + " from " + String(ago * 5) + " ago difference " + String(difference));
 
     if (capacity > 1500) {
       fill_estimate = -1;
@@ -1027,7 +1028,7 @@ unsigned int currentlyPrintingOffset;
     }
 
     // Log temperature always
-    if ((timeNow - lastTimeTemperatureLogged) >= 10000) {
+    if ((timeNow - lastTimeTemperatureLogged) >= 5000) {
       lastTimeTemperatureLogged = timeNow;
       for (int i = TEMPERATURE_HISTORY_LEN - 1; i > 0; i--) {
         temperature_history[i] = temperature_history[i-1];
@@ -1044,7 +1045,7 @@ unsigned int currentlyPrintingOffset;
       //  logHistory("Heat: " + String(temperature_history[5]) + "->" + String(temperature_history[0]));
       //}
       if ((timeNow - lastTimeNotHeating) >= 20000) {
-        unsigned long ago = (timeNow - lastTimeNotHeating - 20000) / 10000;
+        unsigned long ago = (timeNow - lastTimeNotHeating - 20000) / 5000;
         if (ago < 1) {
           // 10 seconds less estimate time @ 20 seconds
           // Just for a quicker estimate
