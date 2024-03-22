@@ -225,7 +225,7 @@ class KettleUsermod : public Usermod {
             pinMode(pButtonInfo->pin, INPUT);
           } else {
             anyPressed = 1;
-            pButtonInfo->lastSeenUnpressed = time;
+            pButtonInfo->timeUnpressed = 0;
           }
         }
       }
@@ -888,9 +888,18 @@ unsigned int currentlyPrintingOffset;
     THREADSAFE_EXIT;
   }
 
+  unsigned long timeSinceLastCheckButton = 0;
   void checkButtonPresses(unsigned long timeNow)
   {
     int buttons = 0;
+
+    // Only count a max of 5ms per check, to try to fix glitches
+    // The interrupt should be working, but shrug
+    unsigned long duration = timeNow - timeSinceLastCheckButton;
+    if (duration > 5) {
+      duration = 5;
+    }
+    timeSinceLastCheckButton = timeNow;
 
     // Each button has a timer, if voltage is seen high, that timer is refreshed
     // If that timer runs out, the button is pressed
@@ -904,26 +913,28 @@ unsigned int currentlyPrintingOffset;
         if (pButtonInfo->interruptInfo.interrupt_seen || digitalRead(pButtonInfo->pin))
         {
           pButtonInfo->interruptInfo.interrupt_seen = 0;
-          pButtonInfo->lastSeenUnpressed = timeNow;
+          pButtonInfo->timeUnpressed = 0;
           buttons |= (1 << i);
         }
         else
         {
-          if ((timeNow - pButtonInfo->lastSeenUnpressed) > 50)
-          {
-            // Timer ran out - we have a user button press
-            userPressedButton(i);
-            pButtonInfo->lastSeenUnpressed = timeNow;
-          }
-          else if ((timeNow - pButtonInfo->lastSeenUnpressed) > 10)
-          {
-            // Let's start checking on it with an interrupt
-            if (!pButtonInfo->interruptInfo.attached)
+          if (duration > 0) {
+            pButtonInfo->timeUnpressed += duration;
+            if (pButtonInfo->timeUnpressed > 50)
             {
-              pButtonInfo->lastSeenUnpressed = timeNow - 10;
-              pButtonInfo->interruptInfo.attached = 1;
-              attachInterruptArg(pButtonInfo->pin, interruptHandler, &buttonInfo[i], RISING);
-              //logHistory("Interrupt on " + String(i));
+              // Timer ran out - we have a user button press
+              userPressedButton(i);
+              pButtonInfo->timeUnpressed = 0;
+            }
+            else if (pButtonInfo->timeUnpressed >= 10)
+            {
+              // Let's start checking on it with an interrupt
+              if (!pButtonInfo->interruptInfo.attached)
+              {
+                pButtonInfo->interruptInfo.attached = 1;
+                attachInterruptArg(pButtonInfo->pin, interruptHandler, &buttonInfo[i], RISING);
+                //logHistory("Interrupt on " + String(i));
+              }
             }
           }
         }
