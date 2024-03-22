@@ -259,6 +259,7 @@ function onLoad()
 	updateTablinks(0);
 	pmtLS = localStorage.getItem('wledPmt');
 
+	gId("kettlepic").src = "kettle.svg";
 	// Load initial data
 	requestJson();// will load presets and create WS
 	setInterval(requestJson, 5000);
@@ -669,9 +670,11 @@ function populateInfo(i)
 		}
 	}
 
-	var statetext = "Off";
-	if (i.Kettle.powerled) statetext = "Boiling";
+	var statetext;
+	if (!i.Kettle.kettlepresent) statetext = "Kettle Gone";
+	else if (i.Kettle.powerled) statetext = "Boiling";
 	else if (i.Kettle.holdled) statetext = "Holding";
+	else statetext = "Off";
 
 	cn += `<table>
 ${urows}
@@ -701,9 +704,8 @@ ${inforow("Environment",i.arch + " " + i.core + " (" + i.lwip + ")")}
 	}
 
 	cn = `<table>
-${inforow("Temperature", temperature)}
+${i.Kettle.kettlepresent ? inforow("Temperature", temperature) : ""}
 ${inforow("State", statetext)}
-${inforow("Kettle Present", i.Kettle.kettlepresent)}
 ${i.Kettle.currentstate === "" ? "" : inforow("Command", i.Kettle.currentstate)}
 ${i.Kettle.fill_estimate >= 0 ? inforow("Estimated Water Level", "" + i.Kettle.fill_estimate/10 + "%") : ""}
 </table>`;
@@ -719,6 +721,38 @@ ${i.Kettle.fill_estimate >= 0 ? inforow("Estimated Water Level", "" + i.Kettle.f
 	if (document.title != newtitle) {
 		document.title = newtitle;
 	}
+
+	var icon = gId('kettlepic');
+	if (temperature > 200) {
+		icon.style = "filter:invert(39%) sepia(30%) saturate(6856%) hue-rotate(349deg) brightness(91%) contrast(93%);width:70%;max-width:196px;";
+	} else if (temperature > 160) {
+		icon.style = "filter:invert(53%) sepia(64%) saturate(2172%) hue-rotate(326deg) brightness(93%) contrast(65%);width:70%;max-width:196px;";
+	} else {
+		icon.style = "filter:invert(50%);width:70%;max-width:196px;"
+	}
+	var text = gId('kettletemp');
+	text.innerHTML = "" + Math.round(temperature);
+
+	var base = gId('kettlebase');
+	if (i.Kettle.powerled) {
+		base.style.background = "#E04521";
+	} else if (i.Kettle.holdled) {
+		base.style.background = "#C66B60";
+	} else {
+		base.style.background = "#808080";
+	}
+
+	if (i.Kettle.kettlepresent) {
+		gId('kettlegraphics').style.visibility = "visible";
+	} else {
+		gId('kettlegraphics').style.visibility = "hidden";
+	}
+
+	var variant = "kettle.svg";
+	if ((i.Kettle.fill_estimate >= 0) && (i.Kettle.fill_estimate < 1000)) {
+		variant = "kettle_" + (Math.floor(i.Kettle.fill_estimate / 100) * 10) + ".svg";
+	}
+	gId("kettlepic").src = variant;
 }
 
 function populateSegments(s)
