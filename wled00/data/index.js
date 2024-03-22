@@ -262,7 +262,7 @@ function onLoad()
 	gId("kettlepic").src = "kettle.svg";
 	// Load initial data
 	requestJson();// will load presets and create WS
-	setInterval(requestJson, 5000);
+	setTimeout(refreshInfo, 5000);
 	//loadPalettes(()=>{
 	//	// fill effect extra data array
 	//	loadFXData(()=>{
@@ -1451,11 +1451,19 @@ function readState(s,command=false)
 
 var jsonTimeout;
 var reqsLegal = false;
+var lastResponse = null;
+var timeLastUpdated = new Date();
 
 function requestJson(command=null)
 {
 	gId('connind').style.backgroundColor = "var(--c-y)";
+	lastResponse = null;
 	if (command && !reqsLegal) return; // stop post requests from chrome onchange event on page restore
+	console.log("Sending request at " + new Date().toString());
+	if (command != null) console.log("command=" + JSON.stringify(command));
+	var now = new Date();
+	now.setSeconds(now.getSeconds() + 5);
+	timeLastUpdated = now;
 	if (!jsonTimeout) jsonTimeout = setTimeout(()=>{if (ws) ws.close(); ws=null; showErrorToast()}, 3000);
 	var req = null;
 	var useWs = (ws && ws.readyState === WebSocket.OPEN);
@@ -1492,6 +1500,8 @@ function requestJson(command=null)
 		return res.json();
 	})
 	.then(json => {
+		lastResponse = json;
+		console.log("Got response " + JSON.stringify(lastResponse));
 		lastUpdate = new Date();
 		clearErrorToast(3000);
 		gId('connind').style.backgroundColor = "var(--c-g)";
@@ -1510,7 +1520,7 @@ function requestJson(command=null)
 		if (!pJson || isEmpty(pJson)) setTimeout(()=>{
 			loadPresets(()=>{
 				wsRpt = 0;
-				if (!(ws && ws.readyState === WebSocket.OPEN)) makeWS();
+				//if (!(ws && ws.readyState === WebSocket.OPEN)) makeWS();
 			});
 		},25);
 		reqsLegal = true;
@@ -2745,6 +2755,17 @@ function mergeDeep(target, ...sources)
 		}
 	}
 	return mergeDeep(target, ...sources);
+}
+
+var refresh_timeout;
+function refreshInfo()
+{
+	clearTimeout(refresh_timeout);
+	var now = new Date();
+	if (now > timeLastUpdated) {
+		requestJson();
+	}
+	refresh_timeout = setTimeout(refreshInfo, 5000);
 }
 
 size();
