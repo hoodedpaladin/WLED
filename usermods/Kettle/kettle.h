@@ -487,7 +487,10 @@ class KettleUsermod : public Usermod {
       }
       else if (currentState == S_1_OFF)
       {
-        if (!powerled && !holdled)
+        if (currentSetTemperature != 0) {
+            setNewState(S_4_OFF, "Already know set temp");
+        }
+        else if (!powerled && !holdled)
         {
           setNewState(S_2_ON, "");
         }
