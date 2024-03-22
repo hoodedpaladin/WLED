@@ -434,8 +434,9 @@ class KettleUsermod : public Usermod {
         // Clear the user command now
         current_command = "";
       }
-      if (newState == currentState)
+      if ((newState == currentState) && (newState == S_IDLE)) {
         return;
+      }
 
       // Always release buttons at state transitions
       updatePressed(millis(), true);
