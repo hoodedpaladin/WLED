@@ -1356,14 +1356,16 @@ function displayRover(i,s)
 
 function cmpP(a, b)
 {
-	if (cfg.comp.idsort || !a[1].n) return (parseInt(a[0]) > parseInt(b[0]));
-	// sort playlists first, followed by presets with characters and last presets with special 1st character
-	const c = a[1].n.charCodeAt(0);
-	const d = b[1].n.charCodeAt(0);
-	if ((c>47 && c<58) || (c>64 && c<91) || (c>96 && c<123) || c>255) x = '='; else x = '>';
-	if ((d>47 && d<58) || (d>64 && d<91) || (d>96 && d<123) || d>255) y = '='; else y = '>';
-	const n = (a[1].playlist ? '<' : x) + a[1].n;
-	return n.localeCompare((b[1].playlist ? '<' : y) + b[1].n, undefined, {numeric: true});
+	// Steven - always sort by ID
+	return (parseInt(a[0]) > parseInt(b[0]));
+	//if (cfg.comp.idsort || !a[1].n) return (parseInt(a[0]) > parseInt(b[0]));
+	//// sort playlists first, followed by presets with characters and last presets with special 1st character
+	//const c = a[1].n.charCodeAt(0);
+	//const d = b[1].n.charCodeAt(0);
+	//if ((c>47 && c<58) || (c>64 && c<91) || (c>96 && c<123) || c>255) x = '='; else x = '>';
+	//if ((d>47 && d<58) || (d>64 && d<91) || (d>96 && d<123) || d>255) y = '='; else y = '>';
+	//const n = (a[1].playlist ? '<' : x) + a[1].n;
+	//return n.localeCompare((b[1].playlist ? '<' : y) + b[1].n, undefined, {numeric: true});
 }
 
 function makeWS() {
@@ -1652,7 +1654,9 @@ function makePlSel(el, incPl=false)
 	var arr = Object.entries(pJson);
 	for (var a of arr) {
 		var n = a[1].n ? a[1].n : "Preset " + a[0];
-		if (cfg.comp.idsort) n = a[0] + ' ' + n;
+		// Steven always sort by ID
+		//if (cfg.comp.idsort) n = a[0] + ' ' + n;
+		n = a[0] + ' ' + n;
 		if (!incPl && a[1].playlist && a[1].playlist.ps) continue; // remove playlists, sub-playlists not yet supported
 		plSelContent += `<option value="${a[0]}" ${a[0]==el?"selected":""}>${n}</option>`
 	}
