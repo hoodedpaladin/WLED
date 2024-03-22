@@ -24,14 +24,17 @@ var lastinfo = {};
 var isM = false, mw = 0, mh=0;
 var ws, cpick, ranges, wsRpt=0;
 var cfg = {
-	theme:{base:"dark", bg:{url:""}, alpha:{bg:0.6,tab:0.8}, color:{bg:""}},
+	theme:{base:"dark", bg:{url:""}, alpha:{bg:0.85,tab:0.8}, color:{bg:""}},
 	comp :{colors:{picker: true, rgb: false, quick: true, hex: false},
           labels:true, pcmbot:false, pid:true, seglen:false, segpwr:false, segexp:false,
 		  css:true, hdays:false, fxdef:true, idsort: true}
 };
 var hol = [
+	[0,3,3,3,"https://rawcdn.githack.com/hoodedpaladin/WLED/98cacc3a5818e33fec47d7fa1a832c4f9d11d4de/wled00/data/icons-ui/kettle_with_flowers.jpg"],
 	[0,11,24,4,"https://aircoookie.github.io/xmas.png"], // christmas
 	[0,2,17,1,"https://images.alphacoders.com/491/491123.jpg"], // st. Patrick's day
+	[2027,2,28,2,"https://aircoookie.github.io/easter.png"],
+	[2026,3,5,2,"https://aircoookie.github.io/easter.png"],
 	[2025,3,20,2,"https://aircoookie.github.io/easter.png"],
 	[2024,2,31,2,"https://aircoookie.github.io/easter.png"],
 	[0,6,4,1,"https://images.alphacoders.com/516/516792.jpg"], // 4th of July
